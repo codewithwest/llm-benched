@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"bytes"
+	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -38,7 +40,7 @@ type trackingResponseWriter struct {
 	startTime          time.Time
 	firstTokenTime     time.Time
 	tokenCount         int
-	bodyBuf            bytes.Buffer
+	responseBytes      int
 	isInterceptTarget  bool
 }
 
@@ -48,50 +50,54 @@ func (w *trackingResponseWriter) Write(b []byte) (int, error) {
 	}
 
 	if w.isInterceptTarget {
-		// A simple heuristic for token counting on streaming endpoints is counting the newlines
-		// Since each chunk is a newline separated JSON object or SSE data event.
 		w.tokenCount += bytes.Count(b, []byte("\n"))
-		
-		// Optionally buffer a portion of the body to extract the prompt/model if needed,
-		// but typically we'd extract that from the Request, not the Response.
+		w.responseBytes += len(b)
 	}
 
 	return w.ResponseWriter.Write(b)
 }
 
 func (p *TransparentProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Support dynamic routing if a specific provider is requested by the UI
 	targetHost := p.TargetURL
 	if customTarget := r.Header.Get("X-Target-Provider"); customTarget != "" {
 		if parsed, err := url.Parse(customTarget); err == nil {
 			targetHost = parsed
 		}
 	}
-	
-	// Create a dynamic reverse proxy for this specific request
-	rp := httputil.NewSingleHostReverseProxy(targetHost)
 
-	// Check if this is a generation endpoint we want to intercept
 	isTarget := strings.Contains(r.URL.Path, "/generate") || strings.Contains(r.URL.Path, "/chat") || strings.Contains(r.URL.Path, "/completions") || strings.Contains(r.URL.Path, "/embeddings")
-	
-	// If it is, we need to read the request body to get the prompt and model
-	// We'd have to tee the request body. For simplicity, we just track the URL and assume streaming token counts.
-	// But let's log it.
-	
+
+	log.Printf("Proxy: %s %s (intercept=%v)", r.Method, r.URL.Path, isTarget)
+
+	var prompt string
+	var promptLength int
+	if isTarget && r.Body != nil {
+		body, err := io.ReadAll(r.Body)
+		r.Body.Close()
+		if err == nil {
+			prompt = extractPrompt(body)
+			promptLength = extractPromptLength(body)
+			r.Body = io.NopCloser(bytes.NewReader(body))
+		}
+	}
+
+	rp := httputil.NewSingleHostReverseProxy(targetHost)
+	rp.FlushInterval = 50 * time.Millisecond
+
 	tracker := &trackingResponseWriter{
 		ResponseWriter:    w,
 		startTime:         time.Now(),
 		isInterceptTarget: isTarget,
 	}
 
-	// Forward the request via standard ReverseProxy
 	rp.ServeHTTP(tracker, r)
 
-	// Post-request telemetry saving
+	log.Printf("Proxy done: %s (tokens=%d, target=%v)", r.URL.Path, tracker.tokenCount, isTarget)
+
 	if isTarget && tracker.tokenCount > 0 {
 		endTime := time.Now()
 		elapsed := endTime.Sub(tracker.startTime)
-		
+
 		var ttftNs int64
 		if !tracker.firstTokenTime.IsZero() {
 			ttftNs = tracker.firstTokenTime.Sub(tracker.startTime).Nanoseconds()
@@ -103,13 +109,15 @@ func (p *TransparentProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		err := p.DB.SaveBenchmark(
-			"Intercepted Request", // We could tee the r.Body to get the actual prompt
+			prompt,
 			r.URL.Path,
 			targetHost.String(),
 			tps,
 			ttftNs,
-			0, // Network RTT is harder to isolate purely from ReverseProxy without pre-flight pings
+			0,
 			tracker.tokenCount,
+			promptLength,
+			tracker.responseBytes,
 		)
 		if err != nil {
 			log.Printf("Failed to save intercepted telemetry: %v", err)
@@ -117,4 +125,30 @@ func (p *TransparentProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Intercepted %s: %d tokens at %.2f TPS (TTFT: %dms)", r.URL.Path, tracker.tokenCount, tps, ttftNs/1_000_000)
 		}
 	}
+}
+
+func extractPrompt(body []byte) string {
+	var req struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return "Intercepted Request"
+	}
+	if req.Prompt == "" {
+		return "Intercepted Request"
+	}
+	if len(req.Prompt) > 200 {
+		return req.Prompt[:200] + "..."
+	}
+	return req.Prompt
+}
+
+func extractPromptLength(body []byte) int {
+	var req struct {
+		Prompt string `json:"prompt"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return 0
+	}
+	return len(req.Prompt)
 }

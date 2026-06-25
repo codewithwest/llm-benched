@@ -2,10 +2,7 @@ module llm-benchmarker
 
 go 1.25.0
 
-require (
-	modernc.org/sqlite v1.53.0
-	nhooyr.io/websocket v1.8.17
-)
+require modernc.org/sqlite v1.53.0
 
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect

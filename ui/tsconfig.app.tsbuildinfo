@@ -1,1 +1,1 @@
-{"root":["./src/App.tsx","./src/main.tsx","./src/hooks/useWebSocketMetrics.ts"],"errors":true,"version":"6.0.3"}
+{"root":["./src/App.tsx","./src/main.tsx"],"version":"6.0.3"}

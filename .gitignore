@@ -1,0 +1,16 @@
+# Runtime artifacts
+benchmarks.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Build artifacts
+llm-benchmarker

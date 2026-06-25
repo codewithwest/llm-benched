@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"time"
 
@@ -9,15 +10,17 @@ import (
 )
 
 type Benchmark struct {
-	ID           int       `json:"id"`
-	Timestamp    time.Time `json:"timestamp"`
-	Prompt       string    `json:"prompt"`
-	ModelEndpoint string   `json:"model_endpoint"`
-	ProviderURL  string    `json:"provider_url"` // [NEW] Added for multi-host strict tracking
-	TPS          float64   `json:"tps"`
-	TTFTNs       int64     `json:"ttft_ns"`
-	NetworkRTTNs int64     `json:"network_rtt_ns"`
-	TotalTokens  int       `json:"total_tokens"`
+	ID             int       `json:"id"`
+	Timestamp      time.Time `json:"timestamp"`
+	Prompt         string    `json:"prompt"`
+	PromptLength   int       `json:"prompt_length"`
+	ModelEndpoint  string    `json:"model_endpoint"`
+	ProviderURL    string    `json:"provider_url"`
+	TPS            float64   `json:"tps"`
+	TTFTNs         int64     `json:"ttft_ns"`
+	NetworkRTTNs   int64     `json:"network_rtt_ns"`
+	TotalTokens    int       `json:"total_tokens"`
+	ResponseLength int       `json:"response_length"`
 }
 
 type Provider struct {
@@ -51,12 +54,14 @@ func InitDB(filepath string) (*Database, error) {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
 		prompt TEXT,
+		prompt_length INTEGER DEFAULT 0,
 		model_endpoint TEXT,
 		provider_url TEXT,
 		tps REAL,
 		ttft_ns INTEGER,
 		network_rtt_ns INTEGER,
-		total_tokens INTEGER
+		total_tokens INTEGER,
+		response_length INTEGER DEFAULT 0
 	);`
 
 	if _, err := db.Exec(createTableQuery); err != nil {
@@ -66,9 +71,9 @@ func InitDB(filepath string) (*Database, error) {
 	return &Database{db: db}, nil
 }
 
-func (d *Database) SaveBenchmark(prompt, endpoint, providerURL string, tps float64, ttftNs, rttNs int64, totalTokens int) error {
-	query := `INSERT INTO benchmarks (prompt, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens) VALUES (?, ?, ?, ?, ?, ?, ?)`
-	_, err := d.db.Exec(query, prompt, endpoint, providerURL, tps, ttftNs, rttNs, totalTokens)
+func (d *Database) SaveBenchmark(prompt, endpoint, providerURL string, tps float64, ttftNs, rttNs int64, totalTokens, promptLength, responseLength int) error {
+	query := `INSERT INTO benchmarks (prompt, prompt_length, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens, response_length) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := d.db.Exec(query, prompt, promptLength, endpoint, providerURL, tps, ttftNs, rttNs, totalTokens, responseLength)
 	if err != nil {
 		log.Printf("Failed to save benchmark: %v", err)
 	}
@@ -76,7 +81,7 @@ func (d *Database) SaveBenchmark(prompt, endpoint, providerURL string, tps float
 }
 
 func (d *Database) GetBenchmarks() ([]Benchmark, error) {
-	query := `SELECT id, timestamp, prompt, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens FROM benchmarks ORDER BY id DESC LIMIT 200`
+	query := `SELECT id, timestamp, prompt, prompt_length, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens, response_length FROM benchmarks ORDER BY id DESC LIMIT 200`
 	rows, err := d.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -86,7 +91,7 @@ func (d *Database) GetBenchmarks() ([]Benchmark, error) {
 	var benchmarks []Benchmark
 	for rows.Next() {
 		var b Benchmark
-		if err := rows.Scan(&b.ID, &b.Timestamp, &b.Prompt, &b.ModelEndpoint, &b.ProviderURL, &b.TPS, &b.TTFTNs, &b.NetworkRTTNs, &b.TotalTokens); err != nil {
+		if err := rows.Scan(&b.ID, &b.Timestamp, &b.Prompt, &b.PromptLength, &b.ModelEndpoint, &b.ProviderURL, &b.TPS, &b.TTFTNs, &b.NetworkRTTNs, &b.TotalTokens, &b.ResponseLength); err != nil {
 			log.Printf("Failed to scan benchmark row: %v", err)
 			continue
 		}
@@ -97,8 +102,15 @@ func (d *Database) GetBenchmarks() ([]Benchmark, error) {
 
 func (d *Database) AddProvider(name, url string) error {
 	query := `INSERT OR IGNORE INTO providers (name, url) VALUES (?, ?)`
-	_, err := d.db.Exec(query, name, url)
-	return err
+	res, err := d.db.Exec(query, name, url)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("provider with name %q or url %q already exists", name, url)
+	}
+	return nil
 }
 
 func (d *Database) UpdateProviderStatus(id int, status string) error {

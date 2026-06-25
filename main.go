@@ -16,13 +16,21 @@ import (
 	"llm-benchmarker/internal/proxy"
 )
 
+func serveProxy(addr string, proxy http.Handler) {
+	log.Printf("Intercept proxy listening on %s", addr)
+	if err := http.ListenAndServe(addr, proxy); err != nil {
+		log.Fatalf("Intercept proxy error on %s: %v", addr, err)
+	}
+}
+
 //go:embed ui/dist/*
 var uiFS embed.FS
 
 func main() {
-	port := flag.Int("port", 8080, "Port to serve the application on")
+	port := flag.Int("port", 8080, "Port to serve the UI and API on")
 	targetURL := flag.String("target", "http://127.0.0.1:11434", "Remote LLM engine URL")
 	dbPath := flag.String("db", "benchmarks.db", "Path to SQLite database")
+	interceptPort := flag.Int("intercept-port", 0, "If set, also listen on this port as a transparent proxy (e.g. 11434 to intercept existing Ollama traffic)")
 	flag.Parse()
 
 	// Initialize Database
@@ -34,7 +42,9 @@ func main() {
 	log.Printf("Initialized SQLite database at %s", *dbPath)
 
 	// Ensure the default target is added to the database
-	database.AddProvider("Default Engine", *targetURL)
+	if err := database.AddProvider("Default Engine", *targetURL); err != nil {
+		log.Printf("Note: default provider not added (%v)", err)
+	}
 
 	// Start the Background Multi-Host Monitor
 	ctx, cancel := context.WithCancel(context.Background())
@@ -84,9 +94,14 @@ func main() {
 		transparentProxy.ServeHTTP(w, r)
 	})
 
-	// Start Server
+	// Start Server (UI + API + proxy)
 	addr := fmt.Sprintf(":%d", *port)
-	log.Printf("Server listening on http://localhost%s", addr)
+	log.Printf("Dashboard UI at http://localhost%s", addr)
+	if *interceptPort > 0 {
+		proxyAddr := fmt.Sprintf(":%d", *interceptPort)
+		log.Printf("Intercept proxy also listening on %s (forwarding to %s)", proxyAddr, *targetURL)
+		go serveProxy(proxyAddr, transparentProxy)
+	}
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}

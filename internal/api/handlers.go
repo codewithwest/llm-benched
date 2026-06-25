@@ -52,7 +52,7 @@ func (h *DashboardHandler) HandleGetModels(w http.ResponseWriter, r *http.Reques
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		http.Error(w, "Target returned non-200", resp.StatusCode)
+		http.Error(w, "Target returned non-200", http.StatusBadGateway)
 		return
 	}
 

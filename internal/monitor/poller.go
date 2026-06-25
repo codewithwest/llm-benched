@@ -27,10 +27,12 @@ func StartPoller(database *db.Database, ctx context.Context) {
 
 				for _, p := range providers {
 					go func(prov db.Provider) {
-						// Simple health check via HTTP HEAD or GET
 						resp, err := client.Get(prov.URL)
 						status := "online"
-						if err != nil || resp.StatusCode >= 500 {
+						if err != nil {
+							status = "offline"
+						} else if resp.StatusCode >= 500 {
+							resp.Body.Close()
 							status = "offline"
 						} else {
 							resp.Body.Close()

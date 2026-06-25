@@ -1,380 +1,653 @@
-import { useState, useEffect } from 'react';
-import { Activity, Zap, Send, Database, MessageSquare, X, Server, Filter, Plus, Signal, SignalZero } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Activity, Send, X, Plus, Signal, BarChart3, Gauge, Cpu, Terminal } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
+function Select({ value, onChange, options, placeholder }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handle = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
+  const selected = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full bg-[#0E1320] border border-[#222B3D] rounded-lg px-3 py-2 text-xs font-mono text-left transition-colors hover:border-[#FF00FF]/50 focus:border-[#FF00FF]/50 outline-none flex items-center justify-between gap-2"
+      >
+        <span className={selected ? 'text-[#F8FAFC]' : 'text-[#7B8AA0]/50'}>
+          {selected ? selected.label : placeholder}
+        </span>
+        <svg className={`w-3 h-3 text-[#7B8AA0] transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-[#151C2E] border border-[#222B3D] rounded-xl overflow-hidden z-[100] shadow-xl shadow-black/50">
+          {options.length === 0 && (
+            <div className="px-3 py-2.5 text-xs text-[#7B8AA0]/50 font-mono text-center">{placeholder}</div>
+          )}
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => { onChange(opt.value); setOpen(false); }}
+              className={`w-full px-3 py-2 text-xs font-mono text-left transition-colors hover:bg-[#FF00FF]/10 ${
+                value === opt.value ? 'text-[#FF00FF] bg-[#FF00FF]/5 font-bold' : 'text-[#F8FAFC]'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'providers'>('dashboard');
   const [stats, setStats] = useState<any[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [providers, setProviders] = useState<any[]>([]);
-  
-  // Selection & Filters
+
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [activeProviderURL, setActiveProviderURL] = useState<string>('');
-  const [filterModel, setFilterModel] = useState<string>('');
   const [filterEndpoint, setFilterEndpoint] = useState<string>('');
-  const [filterProvider, setFilterProvider] = useState<string>('');
 
-  // Add Provider
-  const [newProviderName, setNewProviderName] = useState('');
-  const [newProviderURL, setNewProviderURL] = useState('');
-  
-  // Chat Overlay State
+  const [providerName, setProviderName] = useState('');
+  const [providerProtocol, setProviderProtocol] = useState<'http' | 'https'>('http');
+  const [providerHost, setProviderHost] = useState('');
+  const [providerPort, setProviderPort] = useState('11434');
+  const [providerPath, setProviderPath] = useState('/api/generate');
+
+  const providerPresets = [
+    { label: 'Ollama', path: '/api/generate', port: '11434' },
+    { label: 'llama.cpp / OpenAI', path: '/v1/chat/completions', port: '8080' },
+  ];
+
+  const applyPreset = (label: string) => {
+    const preset = providerPresets.find((p) => p.label === label);
+    if (preset) {
+      setProviderPath(preset.path);
+      setProviderPort(preset.port);
+    }
+  };
+
+  const composeURL = (host: string, port: string, protocol: string, path: string) => {
+    const cleanPath = path.startsWith('/') ? path : `/${path}`;
+    return `${protocol}://${host}:${port}${cleanPath}`;
+  };
+
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState<string>('');
   const [isStreaming, setIsStreaming] = useState(false);
-  
-  // Polling for Dashboard
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [statRes, modRes, provRes] = await Promise.all([
-          fetch('/api/dashboard/stats').catch(() => null),
-          fetch('/api/dashboard/models').catch(() => null),
-          fetch('/api/dashboard/providers').catch(() => null)
-        ]);
+  const [toast, setToast] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string>('');
 
-        if (statRes) {
-          const s = await statRes.json();
-          setStats(s.benchmarks || []);
-        }
-        if (modRes) {
-          const m = await modRes.json();
-          if (m.models && m.models.length > 0) {
-            setModels(m.models);
-            if (!selectedModel) setSelectedModel(m.models[0]);
-          }
-        }
-        if (provRes) {
-          const p = await provRes.json();
-          if (p.providers) {
-            setProviders(p.providers);
-            if (!activeProviderURL && p.providers.length > 0) {
-              setActiveProviderURL(p.providers[0].url);
-            }
-          }
-        }
-      } catch (err) {
-        // silent
+  const fetchData = async () => {
+    try {
+      const [statRes, modRes, provRes] = await Promise.all([
+        fetch('/api/dashboard/stats').catch(() => null),
+        fetch('/api/dashboard/models').catch(() => null),
+        fetch('/api/dashboard/providers').catch(() => null),
+      ]);
+
+      if (statRes) {
+        const s = await statRes.json();
+        setStats(s.benchmarks || []);
       }
-    };
+      if (modRes) {
+        const m = await modRes.json();
+        setModels(m.models || []);
+      }
+      if (provRes) {
+        const p = await provRes.json();
+        setProviders(p.providers || []);
+      }
+      setLastUpdated(new Date().toLocaleTimeString());
+    } catch {
+      // silent
+    }
+  };
 
+  useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 3000);
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!selectedModel && models.length > 0) {
+      setSelectedModel(models[0]);
+    }
+  }, [models]);
+
+  useEffect(() => {
+    if (!activeProviderURL && providers.length > 0) {
+      setActiveProviderURL(providers[0].url);
+    }
+  }, [providers]);
+
   const handleAddProvider = async () => {
-    if (!newProviderName || !newProviderURL) return;
-    await fetch('/api/dashboard/providers', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newProviderName, url: newProviderURL })
-    });
-    setNewProviderName('');
-    setNewProviderURL('');
+    if (!providerName || !providerHost) return;
+    const url = composeURL(providerHost, providerPort, providerProtocol, providerPath);
+    try {
+      const res = await fetch('/api/dashboard/providers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: providerName, url }),
+      });
+      if (!res.ok) {
+        setToast('Failed to register node');
+        setTimeout(() => setToast(null), 3000);
+        return;
+      }
+      setProviderName('');
+      setProviderHost('');
+      setProviderPort('11434');
+      setProviderProtocol('http');
+      setProviderPath('/api/generate');
+      fetchData();
+      setToast('Node registered');
+      setTimeout(() => setToast(null), 3000);
+    } catch {
+      setToast('Failed to register node');
+      setTimeout(() => setToast(null), 3000);
+    }
   };
 
   const handleGenerate = async () => {
     if (!prompt.trim() || isStreaming) return;
     setIsStreaming(true);
-    setMessages(prev => prev + `\n\nUser: ${prompt}\nAI: `);
-    
+    setMessages((prev) => prev + `\n\nUser: ${prompt}\nAI: `);
     const currentPrompt = prompt;
     setPrompt('');
 
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'X-Target-Provider': activeProviderURL
+          'X-Target-Provider': activeProviderURL,
         },
-        body: JSON.stringify({
-          model: selectedModel,
-          prompt: currentPrompt,
-          stream: true
-        })
+        body: JSON.stringify({ model: selectedModel, prompt: currentPrompt, stream: true }),
       });
 
-      if (!res.body) throw new Error("No response body");
-
+      if (!res.body) throw new Error('No response body');
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
-      
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n').filter(l => l.trim() !== '');
-        
+        const lines = chunk.split('\n').filter((l) => l.trim() !== '');
         for (const line of lines) {
           try {
             const parsed = JSON.parse(line);
             if (parsed.response) {
-              setMessages(prev => prev + parsed.response);
+              setMessages((prev) => prev + parsed.response);
             }
-          } catch (e) { }
+          } catch {
+            // skip malformed lines
+          }
         }
       }
-    } catch (err) {
-      setMessages(prev => prev + `\n[Error: Connection failed]`);
+    } catch {
+      setMessages((prev) => prev + `\n[Error: Connection failed]`);
     } finally {
       setIsStreaming(false);
     }
   };
 
-  const filteredStats = stats.filter(s => {
-    if (filterModel && s.model_endpoint && !s.model_endpoint.includes(filterModel)) return false;
-    if (filterProvider && s.provider_url !== filterProvider) return false;
+  const filteredStats = stats.filter((s) => {
     if (filterEndpoint && s.model_endpoint !== filterEndpoint) return false;
     return true;
   });
 
-  const chartData = [...filteredStats].reverse().map(s => ({
+  const onlineCount = providers.filter((p) => p.status === 'online').length;
+  const avgTps = stats.length
+    ? (stats.reduce((sum, s) => sum + s.tps, 0) / stats.length).toFixed(1)
+    : '--';
+  const avgTTFT = stats.length
+    ? (stats.reduce((sum, s) => sum + s.ttft_ns, 0) / stats.length / 1_000_000).toFixed(0)
+    : '--';
+
+  const chartData = [...filteredStats].reverse().map((s) => ({
     time: new Date(s.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
     tps: parseFloat(s.tps.toFixed(2)),
-    ttft: s.ttft_ns / 1_000_000
+    ttft: s.ttft_ns / 1_000_000,
   }));
 
-  // Helper to extract unique endpoint paths from db strings for filter dropdown
-  const uniqueEndpoints = Array.from(new Set(stats.map(s => s.model_endpoint).filter(Boolean)));
-  const uniqueModels = Array.from(new Set(stats.map(s => s.prompt).filter(Boolean))); // Normally model name is in prompt if we parsed it, but for now we just filter on what we have. Actually the target might just be /api/generate
+  const uniqueEndpoints = Array.from(new Set(stats.map((s) => s.model_endpoint).filter(Boolean)));
+
+  function KPI({ title, value, icon }: { title: string; value: string | number; icon: React.ReactNode }) {
+    return (
+      <div className="rounded-3xl bg-gradient-to-br from-[#0E1320] to-black backdrop-blur-xl border border-[#222B3D]/60 p-5 transition-all duration-300 hover:border-[#FF00FF]/30 hover:shadow-[0_0_30px_rgba(255,0,255,0.06)]">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="text-[#7B8AA0]">{icon}</div>
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0]">{title}</span>
+        </div>
+        <div className="text-2xl font-bold text-[#F8FAFC] tracking-tight">{value}</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-black text-[#F8FAFC] font-sans flex flex-col overflow-x-hidden relative selection:bg-[#FF00FF]/30">
-      
-      {/* Deep Neon Glows */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#FF00FF] rounded-full blur-[250px] opacity-[0.08] pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[30%] h-[40%] bg-[#FF00FF] rounded-full blur-[200px] opacity-[0.05] pointer-events-none"></div>
-      
+    <div className="min-h-screen bg-[#05070D] text-[#F8FAFC] font-sans flex flex-col overflow-x-hidden relative selection:bg-[#FF00FF]/30">
+
+      {/* Living background */}
+      <div className="fixed inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute left-0 top-0 w-[70vw] h-[70vw] bg-fuchsia-500/10 blur-[200px] animate-[pulse_14s_ease-in-out_infinite]" />
+        <div className="absolute right-0 bottom-0 w-[50vw] h-[50vw] bg-cyan-500/10 blur-[250px] animate-[pulse_18s_ease-in-out_infinite]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent,#05070D)]" />
+      </div>
+
       {/* Header */}
-      <header className="px-10 py-6 border-b border-[#1F1F1F] flex items-center justify-between z-10 bg-[#0A0A0A]/80 backdrop-blur-xl sticky top-0">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-[#FF00FF] flex items-center justify-center shadow-[0_0_20px_rgba(255,0,255,0.4)] relative">
-            <Activity className="text-black w-7 h-7" />
+      <header className="relative z-10 px-8 py-4 border-b border-[#222B3D]/60 flex items-center justify-between bg-[#05070D]/80 backdrop-blur-xl sticky top-0">
+        <div className="flex items-center gap-5">
+          <div className="w-10 h-10 rounded-xl bg-[#FF00FF] flex items-center justify-center shadow-[0_0_20px_rgba(255,0,255,0.3)]">
+            <BarChart3 className="text-black w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-white drop-shadow-[0_0_10px_rgba(255,0,255,0.3)]">Telemetry Matrix</h1>
-            <p className="text-xs text-[#FF00FF] font-bold tracking-widest uppercase mt-1">Multi-Node Interceptor</p>
+            <h1 className="text-lg font-bold tracking-tight text-white">Neural Operations Center</h1>
+            <p className="text-[10px] text-[#7B8AA0] font-medium tracking-widest uppercase">Telemetry Interceptor</p>
           </div>
         </div>
-        
-        {/* Active Routing Target */}
-        <div className="flex items-center gap-4 bg-[#0A0A0A] border border-[#1F1F1F] p-2 rounded-xl">
-          <div className="flex flex-col px-3 border-r border-[#1F1F1F]">
-            <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-widest">Active Proxy Target</span>
-            <span className="text-sm font-mono text-white mt-0.5">{activeProviderURL || 'Awaiting Node...'}</span>
+
+        {/* Ambient header stats */}
+        <div className="hidden md:flex items-center gap-6">
+          <div className="flex items-center gap-2 text-xs">
+            <Signal className={`w-3.5 h-3.5 ${onlineCount > 0 ? 'text-[#00FFA3]' : 'text-[#7B8AA0]'}`} />
+            <span className="text-[#7B8AA0] font-mono">{providers.length} Nodes</span>
           </div>
-          <div className="px-2">
-            <select 
-              value={selectedModel} 
-              onChange={e => setSelectedModel(e.target.value)}
-              className="bg-transparent border border-[#FF00FF]/30 text-[#FF00FF] hover:border-[#FF00FF] px-4 py-2 rounded-lg outline-none appearance-none font-mono text-sm font-bold cursor-pointer transition-colors"
-            >
-              {models.length === 0 && <option>No Models Detected</option>}
-              {models.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
+          <div className="flex items-center gap-2 text-xs">
+            <Cpu className="w-3.5 h-3.5 text-[#7B8AA0]" />
+            <span className="text-[#7B8AA0] font-mono">{models.length} Models</span>
           </div>
+          <div className="flex items-center gap-2 text-xs">
+            <Gauge className="w-3.5 h-3.5 text-[#7B8AA0]" />
+            <span className="text-[#7B8AA0] font-mono">{avgTps} Avg TPS</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <Activity className="w-3.5 h-3.5 text-[#7B8AA0]" />
+            <span className="text-[#7B8AA0] font-mono">{avgTTFT} ms</span>
+          </div>
+        </div>
+
+        <div className="w-44">
+          <Select
+            value={selectedModel}
+            onChange={setSelectedModel}
+            options={models.map((m) => ({ value: m, label: m }))}
+            placeholder="No models"
+          />
         </div>
       </header>
 
-      {/* Main Grid Content */}
-      <main className="flex-1 p-10 z-10 space-y-10 max-w-[1600px] mx-auto w-full">
-        
-        {/* Top Section: Providers / Nodes */}
-        <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-sm font-bold text-[#94A3B8] uppercase tracking-widest flex items-center gap-2">
-              <Server className="w-4 h-4 text-[#FF00FF]" /> Network Nodes
-            </h2>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {providers.map(p => (
-              <div 
-                key={p.id} 
-                onClick={() => setActiveProviderURL(p.url)}
-                className={`p-5 rounded-2xl border transition-all cursor-pointer group ${
-                  activeProviderURL === p.url 
-                    ? 'bg-[#0A0A0A] border-[#FF00FF] shadow-[0_0_30px_rgba(255,0,255,0.15)]' 
-                    : 'bg-[#050505] border-[#1F1F1F] hover:border-[#FF00FF]/50'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-white text-lg">{p.name}</h3>
-                  {p.status === 'online' ? (
-                    <Signal className="w-5 h-5 text-[#10B981] animate-pulse" />
-                  ) : (
-                    <SignalZero className="w-5 h-5 text-red-500" />
+      {/* Tab bar */}
+      <nav className="relative z-10 flex gap-1 px-6 pt-4 bg-[#05070D]/60 backdrop-blur-xl">
+        <button
+          onClick={() => setActiveTab('dashboard')}
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 ${
+            activeTab === 'dashboard'
+              ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
+              : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
+          }`}
+        >
+          Dashboard
+        </button>
+        <button
+          onClick={() => setActiveTab('providers')}
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 ${
+            activeTab === 'providers'
+              ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
+              : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
+          }`}
+        >
+          Providers
+        </button>
+      </nav>
+
+      <main className="relative z-10 flex-1 px-6 pb-6 w-full">
+
+        {activeTab === 'dashboard' && (
+          <div className="space-y-6">
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <KPI title="Active Providers" value={onlineCount} icon={<Signal className="w-4 h-4" />} />
+              <KPI title="Avg TPS" value={avgTps} icon={<Gauge className="w-4 h-4" />} />
+              <KPI title="Avg TTFT" value={`${avgTTFT} ms`} icon={<Activity className="w-4 h-4" />} />
+              <KPI title="Requests" value={filteredStats.length} icon={<BarChart3 className="w-4 h-4" />} />
+            </div>
+
+            <section className="rounded-3xl bg-[#0E1320]/80 border border-[#222B3D]/60 p-6 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-fuchsia-400/30 to-transparent" />
+              <h2 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-4 flex items-center gap-2">
+                <BarChart3 className="w-3.5 h-3.5 text-[#FF00FF]" /> TPS Trend
+              </h2>
+              <div className="h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#222B3D" vertical={false} />
+                    <XAxis dataKey="time" stroke="#7B8AA0" fontSize={10} tickMargin={8} axisLine={false} tickLine={false} />
+                    <YAxis stroke="#7B8AA0" fontSize={10} axisLine={false} tickLine={false} tickFormatter={(val) => `${val} t/s`} />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#05070D', borderColor: '#FF00FF', borderRadius: '12px', color: '#F8FAFC', boxShadow: '0 0 30px rgba(255,0,255,0.1)' }}
+                      itemStyle={{ color: '#FF00FF', fontWeight: 'bold' }}
+                    />
+                    <Line type="monotone" dataKey="tps" stroke="#FF00FF" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#FF00FF', stroke: '#05070D', strokeWidth: 2 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-[#222B3D]/60 overflow-hidden bg-[#0E1320]/60">
+              <div className="px-6 py-4 border-b border-[#222B3D]/60 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-[#FF00FF]" />
+                  <h2 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0]">Activity</h2>
+                  {lastUpdated && (
+                    <span className="text-[9px] text-[#7B8AA0]/60 font-mono ml-2">updated {lastUpdated}</span>
                   )}
                 </div>
-                <p className="text-xs font-mono text-[#94A3B8] mb-4 bg-black p-2 rounded-lg border border-[#1F1F1F] truncate">{p.url}</p>
-                <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider text-[#94A3B8]">
-                  <span>Status: <span className={p.status === 'online' ? 'text-[#10B981]' : 'text-red-500'}>{p.status}</span></span>
-                  {activeProviderURL === p.url && <span className="text-[#FF00FF]">Active Target</span>}
+                <div className="flex items-center gap-3">
+                  <div className="w-44">
+                    <Select
+                      value={filterEndpoint}
+                      onChange={setFilterEndpoint}
+                      options={[
+                        { value: '', label: 'All Endpoints' },
+                        ...uniqueEndpoints.map((e) => ({ value: e, label: e })),
+                      ]}
+                      placeholder="All Endpoints"
+                    />
+                  </div>
+                  <button
+                    onClick={fetchData}
+                    className="p-2 rounded-lg bg-[#0E1320] border border-[#222B3D] text-[#7B8AA0] hover:text-[#F8FAFC] hover:border-[#FF00FF]/50 transition-all duration-200 active:scale-95"
+                    title="Refresh"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
                 </div>
               </div>
-            ))}
-            
-            {/* Add Node Card */}
-            <div className="p-5 rounded-2xl border border-dashed border-[#1F1F1F] bg-[#050505] flex flex-col justify-center hover:border-[#FF00FF]/50 transition-colors">
-              <div className="flex gap-2 mb-3">
-                <input 
-                  type="text" placeholder="Alias (e.g. GPU-Rig-1)" 
-                  value={newProviderName} onChange={e => setNewProviderName(e.target.value)}
-                  className="w-1/2 bg-black border border-[#1F1F1F] rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#FF00FF] text-white font-mono"
-                />
-                <input 
-                  type="text" placeholder="URL (http://...)" 
-                  value={newProviderURL} onChange={e => setNewProviderURL(e.target.value)}
-                  className="w-1/2 bg-black border border-[#1F1F1F] rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-[#FF00FF] text-white font-mono"
-                />
-              </div>
-              <button 
-                onClick={handleAddProvider}
-                className="w-full py-2 bg-[#FF00FF]/10 text-[#FF00FF] hover:bg-[#FF00FF] hover:text-black border border-[#FF00FF]/30 rounded-lg text-xs font-bold uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" /> Add Host
-              </button>
-            </div>
-          </div>
-        </section>
 
-        {/* Middle Section: Graph */}
-        <section className="bg-[#0A0A0A] rounded-3xl p-8 border border-[#1F1F1F] shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#FF00FF] to-transparent opacity-30"></div>
-          <h2 className="text-sm font-bold text-[#94A3B8] uppercase tracking-widest mb-6 flex items-center gap-2">
-            <Zap className="w-4 h-4 text-[#FF00FF]" /> Global TPS Trend
-          </h2>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1F1F1F" vertical={false} />
-                <XAxis dataKey="time" stroke="#94A3B8" fontSize={11} tickMargin={10} axisLine={false} tickLine={false} />
-                <YAxis stroke="#94A3B8" fontSize={11} axisLine={false} tickLine={false} tickFormatter={(val) => `${val} t/s`} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#000000', borderColor: '#FF00FF', borderRadius: '12px', color: '#fff', boxShadow: '0 0 20px rgba(255,0,255,0.2)' }}
-                  itemStyle={{ color: '#FF00FF', fontWeight: 'bold' }}
-                />
-                <Line type="monotone" dataKey="tps" stroke="#FF00FF" strokeWidth={3} dot={{ fill: '#000000', stroke: '#FF00FF', strokeWidth: 2, r: 4 }} activeDot={{ r: 6, fill: '#FF00FF', stroke: '#fff' }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-
-        {/* Bottom Section: Filtered Matrix Logs */}
-        <section className="bg-[#0A0A0A] rounded-3xl border border-[#1F1F1F] overflow-hidden flex flex-col shadow-2xl">
-          
-          {/* Filters Bar */}
-          <div className="p-5 border-b border-[#1F1F1F] bg-black/40 flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-3">
-              <Database className="w-5 h-5 text-[#FF00FF]" />
-              <h2 className="text-sm font-bold text-white uppercase tracking-widest">Intercept Matrix Logs</h2>
-            </div>
-            
-            <div className="flex items-center gap-4">
-              <Filter className="w-4 h-4 text-[#94A3B8]" />
-              <select 
-                value={filterProvider} onChange={e => setFilterProvider(e.target.value)}
-                className="bg-[#050505] border border-[#1F1F1F] text-[#94A3B8] px-4 py-2 rounded-lg outline-none focus:border-[#FF00FF] text-xs font-mono min-w-[150px]"
-              >
-                <option value="">All Providers</option>
-                {providers.map(p => <option key={p.url} value={p.url}>{p.name}</option>)}
-              </select>
-
-              <select 
-                value={filterEndpoint} onChange={e => setFilterEndpoint(e.target.value)}
-                className="bg-[#050505] border border-[#1F1F1F] text-[#94A3B8] px-4 py-2 rounded-lg outline-none focus:border-[#FF00FF] text-xs font-mono min-w-[150px]"
-              >
-                <option value="">All Endpoints</option>
-                {uniqueEndpoints.map(e => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-[#050505] text-[#94A3B8] text-[10px] uppercase font-black tracking-widest">
-                <tr>
-                  <th className="px-8 py-5 border-b border-[#1F1F1F]">Req ID</th>
-                  <th className="px-8 py-5 border-b border-[#1F1F1F]">Timestamp</th>
-                  <th className="px-8 py-5 border-b border-[#1F1F1F]">Provider</th>
-                  <th className="px-8 py-5 border-b border-[#1F1F1F]">Endpoint</th>
-                  <th className="px-8 py-5 border-b border-[#1F1F1F]">Tokens</th>
-                  <th className="px-8 py-5 border-b border-[#1F1F1F]">TTFT (ms)</th>
-                  <th className="px-8 py-5 border-b border-[#1F1F1F] text-right">Speed (TPS)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#1F1F1F]">
+              <div className="p-6 space-y-3 max-h-[400px] overflow-y-auto">
                 {filteredStats.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-8 py-12 text-center text-[#94A3B8] bg-black">No intercepts match the selected filters.</td>
-                  </tr>
+                  <div className="flex flex-col items-center justify-center py-16 text-[#7B8AA0]">
+                    <Activity className="w-10 h-10 animate-pulse mb-4 opacity-50" />
+                    <p className="text-xs font-mono">Waiting for incoming traffic...</p>
+                  </div>
                 )}
                 {filteredStats.map((s) => (
-                  <tr key={s.id} className="hover:bg-[#FF00FF]/5 transition-colors bg-black">
-                    <td className="px-8 py-5 font-mono text-[#FF00FF]/80 text-xs">#{s.id}</td>
-                    <td className="px-8 py-5 font-mono text-xs text-[#94A3B8]">{new Date(s.timestamp).toLocaleTimeString()}</td>
-                    <td className="px-8 py-5 font-mono text-xs text-white max-w-[200px] truncate">{s.provider_url}</td>
-                    <td className="px-8 py-5 font-mono text-xs text-white">
-                      <span className="bg-[#1F1F1F] px-2 py-1 rounded text-[#FF00FF]">{s.model_endpoint}</span>
-                    </td>
-                    <td className="px-8 py-5 font-mono font-bold">{s.total_tokens}</td>
-                    <td className="px-8 py-5 font-mono text-[#94A3B8]">{(s.ttft_ns / 1_000_000).toFixed(0)}</td>
-                    <td className="px-8 py-5 text-right font-bold text-[#FF00FF] font-mono text-base">{s.tps.toFixed(2)}</td>
-                  </tr>
+                  <div
+                    key={s.id}
+                    className="rounded-2xl bg-[#0E1320]/50 border border-[#222B3D]/40 p-4 hover:translate-x-1 transition-all duration-250 group"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] font-mono text-[#FF00FF]/60">#{s.id}</span>
+                          <span className="text-xs font-mono bg-[#151C2E] px-2 py-0.5 rounded text-[#FF00FF]">{s.model_endpoint}</span>
+                        </div>
+                        <div className="text-[10px] text-[#7B8AA0] font-mono truncate max-w-[300px]">{s.provider_url}</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-sm font-bold text-[#FF00FF] font-mono">{s.tps.toFixed(2)} TPS</div>
+                        <div className="text-[10px] text-[#7B8AA0] font-mono">{(s.ttft_ns / 1_000_000).toFixed(0)} ms · {s.total_tokens} tok</div>
+                        <div className="text-[9px] text-[#7B8AA0]/60 font-mono">prompt {s.prompt_length} · resp {s.response_length} B</div>
+                      </div>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </section>
           </div>
-        </div>
+        )}
+
+        {activeTab === 'providers' && (
+          <div className="max-w-3xl space-y-8">
+            <div>
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-sm font-bold uppercase tracking-widest text-[#F8FAFC] flex items-center gap-2">
+                  <Signal className="w-4 h-4 text-[#FF00FF]" /> Network Nodes
+                </h2>
+                <span className="text-[10px] font-mono text-[#7B8AA0] bg-[#0E1320] px-3 py-1 rounded-full">{onlineCount}/{providers.length} online</span>
+              </div>
+
+              {providers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-[#7B8AA0] rounded-2xl border border-dashed border-[#222B3D]/60">
+                  <Signal className="w-10 h-10 mb-4 opacity-40" />
+                  <p className="text-xs font-mono">No nodes registered yet</p>
+                  <p className="text-[10px] text-[#7B8AA0]/50 mt-1 font-mono">Use the form below to add a provider</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {providers.map((p) => (
+                    <div
+                      key={p.id}
+                      onClick={() => setActiveProviderURL(p.url)}
+                      className={`relative rounded-2xl overflow-hidden p-5 group transition-all duration-500 cursor-pointer ${
+                        activeProviderURL === p.url
+                          ? 'bg-gradient-to-br from-fuchsia-500/20 to-[#0E1320] border-fuchsia-500 scale-[1.02] shadow-[0_0_30px_rgba(255,0,255,0.08)]'
+                          : 'bg-[#0E1320]/60 hover:bg-[#151C2E] border-[#222B3D]/60'
+                      } border`}
+                    >
+                      {activeProviderURL === p.url && (
+                        <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-fuchsia-400 to-transparent" />
+                      )}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="font-semibold text-sm text-[#F8FAFC]">{p.name}</div>
+                        <div className={`w-3 h-3 rounded-full shrink-0 ${
+                          p.status === 'online'
+                            ? 'bg-[#00FFA3] shadow-[0_0_16px_rgba(0,255,163,0.5)] animate-pulse'
+                            : 'bg-red-500/40'
+                        }`} />
+                      </div>
+                      <div className="text-[11px] text-[#7B8AA0] font-mono truncate">{p.url}</div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <span className={`text-[9px] font-bold uppercase tracking-wider ${
+                          p.status === 'online' ? 'text-[#00FFA3]' : 'text-red-400'
+                        }`}>
+                          {p.status}
+                        </span>
+                        {activeProviderURL === p.url && (
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-[#FF00FF] ml-auto">active target</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-[#222B3D]/60 pt-8">
+              <h2 className="text-sm font-bold uppercase tracking-widest text-[#F8FAFC] flex items-center gap-2 mb-5">
+                <Plus className="w-4 h-4 text-[#FF00FF]" /> Add Node
+              </h2>
+              <div className="rounded-3xl bg-[#0E1320]/40 border border-[#222B3D]/60 p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] block mb-1.5">Alias</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. GPU-Rig-1"
+                      value={providerName}
+                      onChange={(e) => setProviderName(e.target.value)}
+                      className="w-full bg-[#05070D] border border-[#222B3D] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#FF00FF]/50 text-[#F8FAFC] font-mono placeholder:text-[#7B8AA0]/40 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] block mb-1.5">Protocol</label>
+                    <div className="flex rounded-xl overflow-hidden border border-[#222B3D]">
+                      <button
+                        type="button"
+                        onClick={() => setProviderProtocol('http')}
+                        className={`flex-1 py-3 text-sm font-mono font-bold transition-colors ${
+                          providerProtocol === 'http'
+                            ? 'bg-[#FF00FF] text-black'
+                            : 'bg-[#05070D] text-[#7B8AA0] hover:text-[#F8FAFC]'
+                        }`}
+                      >
+                        http
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setProviderProtocol('https')}
+                        className={`flex-1 py-3 text-sm font-mono font-bold transition-colors ${
+                          providerProtocol === 'https'
+                            ? 'bg-[#FF00FF] text-black'
+                            : 'bg-[#05070D] text-[#7B8AA0] hover:text-[#F8FAFC]'
+                        }`}
+                      >
+                        https
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] block mb-1.5">IP / Host</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. 192.168.1.50"
+                      value={providerHost}
+                      onChange={(e) => setProviderHost(e.target.value)}
+                      className="w-full bg-[#05070D] border border-[#222B3D] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#FF00FF]/50 text-[#F8FAFC] font-mono placeholder:text-[#7B8AA0]/40 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] block mb-1.5">Port</label>
+                    <input
+                      type="text"
+                      placeholder="11434"
+                      value={providerPort}
+                      onChange={(e) => setProviderPort(e.target.value)}
+                      className="w-full bg-[#05070D] border border-[#222B3D] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#FF00FF]/50 text-[#F8FAFC] font-mono placeholder:text-[#7B8AA0]/40 transition-colors"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] block mb-1.5">Provider Type</label>
+                    <div className="flex rounded-xl overflow-hidden border border-[#222B3D]">
+                      {providerPresets.map((preset) => (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => applyPreset(preset.label)}
+                          className={`flex-1 py-3 text-sm font-mono font-bold transition-colors ${
+                            providerPath === preset.path
+                              ? 'bg-[#FF00FF] text-black'
+                              : 'bg-[#05070D] text-[#7B8AA0] hover:text-[#F8FAFC]'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] block mb-1.5">Route Path</label>
+                    <input
+                      type="text"
+                      placeholder="/api/generate"
+                      value={providerPath}
+                      onChange={(e) => setProviderPath(e.target.value)}
+                      className="w-full bg-[#05070D] border border-[#222B3D] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#FF00FF]/50 text-[#F8FAFC] font-mono placeholder:text-[#7B8AA0]/40 transition-colors"
+                    />
+                  </div>
+                </div>
+                <div className="mb-4 text-[10px] text-[#7B8AA0] font-mono">
+                  URL preview: {composeURL(providerHost || '0.0.0.0', providerPort, providerProtocol, providerPath)}
+                </div>
+                <button
+                  onClick={handleAddProvider}
+                  className="w-full md:w-auto px-8 py-3 bg-[#FF00FF] text-black rounded-xl hover:bg-white transition-all duration-250 text-xs font-bold uppercase tracking-widest flex items-center justify-center gap-2 active:scale-[0.98]"
+                >
+                  <Plus className="w-4 h-4" /> Register Node
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
 
-      {/* Floating Action Button (FAB) */}
-      <button 
+      {/* Chat FAB */}
+      <button
         onClick={() => setIsChatOpen(!isChatOpen)}
-        className="fixed bottom-10 right-10 w-16 h-16 bg-[#FF00FF] text-black rounded-full shadow-[0_0_30px_rgba(255,0,255,0.6)] hover:scale-110 hover:shadow-[0_0_40px_rgba(255,0,255,0.9)] transition-all flex items-center justify-center z-50 group"
+        className="fixed bottom-8 right-8 w-14 h-14 bg-[#FF00FF] text-black rounded-full shadow-[0_0_25px_rgba(255,0,255,0.5)] hover:scale-110 hover:shadow-[0_0_40px_rgba(255,0,255,0.8)] transition-all duration-250 flex items-center justify-center z-50 active:scale-[0.95]"
       >
-        {isChatOpen ? <X className="w-8 h-8" /> : <MessageSquare className="w-8 h-8 group-hover:animate-pulse" />}
+        {isChatOpen ? <X className="w-6 h-6" /> : <Terminal className="w-6 h-6" />}
       </button>
 
-      {/* Chat Overlay Modal */}
-      <div className={`fixed bottom-32 right-10 w-[450px] h-[600px] bg-[#0A0A0A] border border-[#FF00FF]/50 rounded-3xl shadow-[0_20px_60px_rgba(255,0,255,0.15)] flex flex-col z-40 transform transition-all duration-400 origin-bottom-right overflow-hidden ${isChatOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'}`}>
-        
-        <div className="p-5 border-b border-[#1F1F1F] bg-black flex items-center justify-between">
+      {/* Chat Overlay */}
+      <div
+        className={`fixed bottom-28 right-8 w-[520px] h-[70vh] backdrop-blur-3xl bg-[#05070D]/70 rounded-[32px] border border-[#222B3D]/80 shadow-[0_30px_80px_rgba(0,0,0,0.5)] flex flex-col z-40 transform transition-all duration-400 origin-bottom-right overflow-hidden ${
+          isChatOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="px-6 py-4 border-b border-[#222B3D]/60 flex items-center justify-between bg-[#05070D]/80">
           <div className="flex items-center gap-3">
-            <Activity className="w-5 h-5 text-[#FF00FF]" />
-            <h3 className="font-bold text-white tracking-wide">Live Stream Terminal</h3>
+            <Terminal className="w-4 h-4 text-[#FF00FF]" />
+            <h3 className="font-semibold text-sm text-[#F8FAFC]">Live Stream</h3>
           </div>
-          <span className="text-[10px] font-bold uppercase text-[#10B981] bg-[#10B981]/10 px-2 py-1 rounded-full animate-pulse">Ready</span>
+          <span className="text-[9px] font-bold uppercase text-[#00FFA3] bg-[#00FFA3]/10 px-2 py-1 rounded-full animate-pulse">Ready</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5 font-mono text-sm leading-relaxed text-[#F8FAFC]/90 whitespace-pre-wrap bg-black/50">
-          {messages || <span className="text-[#94A3B8]/40 italic">Awaiting manual intercept trigger...</span>}
-          {isStreaming && <span className="inline-block w-2.5 h-5 bg-[#FF00FF] animate-pulse ml-1 align-middle shadow-[0_0_10px_#FF00FF]"></span>}
+        <div className="flex-1 overflow-y-auto p-6 font-mono text-sm leading-relaxed text-[#F8FAFC]/80 whitespace-pre-wrap bg-black/30">
+          {messages || <span className="text-[#7B8AA0]/40 italic text-xs">Awaiting prompt input...</span>}
+          {isStreaming && (
+            <span className="inline-flex items-center gap-1 ml-2 align-middle">
+              <span className="w-1.5 h-1.5 bg-[#FF00FF] rounded-full animate-bounce" />
+              <span className="w-1.5 h-1.5 bg-[#FF00FF] rounded-full animate-bounce [animation-delay:100ms]" />
+              <span className="w-1.5 h-1.5 bg-[#FF00FF] rounded-full animate-bounce [animation-delay:200ms]" />
+            </span>
+          )}
         </div>
 
-        <div className="p-5 bg-black border-t border-[#1F1F1F] flex gap-3">
-          <input 
+        <div className="px-6 py-4 bg-[#05070D]/90 border-t border-[#222B3D]/60 flex gap-3">
+          <input
             type="text"
             value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleGenerate()}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
             disabled={isStreaming || !selectedModel || !activeProviderURL}
-            placeholder={selectedModel ? "Execute prompt..." : "Awaiting proxy target..."}
-            className="flex-1 bg-[#0A0A0A] border border-[#1F1F1F] rounded-xl px-4 py-3 focus:outline-none focus:border-[#FF00FF] text-sm text-white font-mono placeholder:text-[#94A3B8]/50 transition-colors"
+            placeholder={selectedModel ? 'Send a prompt...' : 'Awaiting proxy target...'}
+            className="flex-1 bg-[#0E1320] border border-[#222B3D] rounded-xl px-4 py-3 focus:outline-none focus:border-[#FF00FF]/50 text-sm text-[#F8FAFC] font-mono placeholder:text-[#7B8AA0]/50 transition-colors"
           />
-          <button 
+          <button
             onClick={handleGenerate}
             disabled={isStreaming || !selectedModel || !activeProviderURL}
-            className="bg-[#FF00FF] text-black w-14 rounded-xl hover:bg-white disabled:opacity-30 transition-all flex items-center justify-center shadow-[0_0_15px_rgba(255,0,255,0.4)] disabled:shadow-none"
+            className="bg-[#FF00FF] text-black w-12 rounded-xl hover:bg-white disabled:opacity-30 transition-all duration-250 flex items-center justify-center shadow-[0_0_15px_rgba(255,0,255,0.3)] disabled:shadow-none active:scale-[0.95]"
           >
-            <Send className="w-5 h-5" />
+            <Send className="w-4 h-4" />
           </button>
         </div>
       </div>
+
+      {toast && (
+        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 bg-[#0E1320] border border-[#222B3D] rounded-xl text-xs font-mono text-[#F8FAFC] shadow-[0_10px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl animate-[fadeIn_0.2s_ease-out]">
+          {toast}
+        </div>
+      )}
 
     </div>
   );
