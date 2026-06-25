@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-textMain font-sans antialiased m-0 p-0 overflow-hidden;
+  }
+}
+
+@layer utilities {
+  .glass-panel {
+    @apply bg-panel backdrop-blur-xl border border-border shadow-2xl;
+  }
+  
+  .glass-input {
+    @apply bg-[rgba(0,0,0,0.2)] border border-border text-textMain focus:outline-none focus:ring-1 focus:ring-accent transition-all duration-300;
+  }
+
+  /* Custom Scrollbar for sleek look */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-textMuted;
+  }
+}
