@@ -39,9 +39,18 @@ type trackingResponseWriter struct {
 	http.ResponseWriter
 	startTime          time.Time
 	firstTokenTime     time.Time
-	tokenCount         int
+	streamTokenCount   int
+	wordTokenCount     int
 	responseBytes      int
 	isInterceptTarget  bool
+	responseBody       bytes.Buffer
+}
+
+func (w *trackingResponseWriter) tokenCount() int {
+	if w.streamTokenCount > w.wordTokenCount {
+		return w.streamTokenCount
+	}
+	return w.wordTokenCount
 }
 
 func (w *trackingResponseWriter) Write(b []byte) (int, error) {
@@ -50,8 +59,10 @@ func (w *trackingResponseWriter) Write(b []byte) (int, error) {
 	}
 
 	if w.isInterceptTarget {
-		w.tokenCount += bytes.Count(b, []byte("\n"))
+		w.streamTokenCount += bytes.Count(b, []byte("\n"))
+		w.wordTokenCount += bytes.Count(b, []byte(" "))
 		w.responseBytes += len(b)
+		w.responseBody.Write(b)
 	}
 
 	return w.ResponseWriter.Write(b)
@@ -67,19 +78,25 @@ func (p *TransparentProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	isTarget := strings.Contains(r.URL.Path, "/generate") || strings.Contains(r.URL.Path, "/chat") || strings.Contains(r.URL.Path, "/completions") || strings.Contains(r.URL.Path, "/embeddings")
 
-	log.Printf("Proxy: %s %s (intercept=%v)", r.Method, r.URL.Path, isTarget)
-
 	var prompt string
 	var promptLength int
+	var modelName string
+	var isStream bool
+	var rawRequestBody string
 	if isTarget && r.Body != nil {
 		body, err := io.ReadAll(r.Body)
 		r.Body.Close()
 		if err == nil {
+			rawRequestBody = string(body)
 			prompt = extractPrompt(body)
 			promptLength = extractPromptLength(body)
+			modelName = extractModel(body)
+			isStream = extractStream(body)
 			r.Body = io.NopCloser(bytes.NewReader(body))
 		}
 	}
+
+	log.Printf("→ %s %s (model: %s, stream: %v, prompt: %d chars)", r.Method, r.URL.Path, modelName, isStream, promptLength)
 
 	rp := httputil.NewSingleHostReverseProxy(targetHost)
 	rp.FlushInterval = 50 * time.Millisecond
@@ -92,9 +109,7 @@ func (p *TransparentProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	rp.ServeHTTP(tracker, r)
 
-	log.Printf("Proxy done: %s (tokens=%d, target=%v)", r.URL.Path, tracker.tokenCount, isTarget)
-
-	if isTarget && tracker.tokenCount > 0 {
+	if isTarget && tracker.tokenCount() > 0 {
 		endTime := time.Now()
 		elapsed := endTime.Sub(tracker.startTime)
 
@@ -105,8 +120,11 @@ func (p *TransparentProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		tps := 0.0
 		if elapsed.Seconds() > 0 {
-			tps = float64(tracker.tokenCount) / elapsed.Seconds()
+			tps = float64(tracker.tokenCount()) / elapsed.Seconds()
 		}
+
+		log.Printf("← %s | %d tokens | %.2f TPS | TTFT: %dms | model: %s",
+			r.URL.Path, tracker.tokenCount(), tps, ttftNs/1_000_000, modelName)
 
 		err := p.DB.SaveBenchmark(
 			prompt,
@@ -115,15 +133,17 @@ func (p *TransparentProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			tps,
 			ttftNs,
 			0,
-			tracker.tokenCount,
+			tracker.tokenCount(),
 			promptLength,
 			tracker.responseBytes,
+			rawRequestBody,
+			tracker.responseBody.String(),
 		)
 		if err != nil {
 			log.Printf("Failed to save intercepted telemetry: %v", err)
-		} else {
-			log.Printf("Intercepted %s: %d tokens at %.2f TPS (TTFT: %dms)", r.URL.Path, tracker.tokenCount, tps, ttftNs/1_000_000)
 		}
+	} else if isTarget {
+		log.Printf("← %s | 0 tokens (non-streaming or empty response)", r.URL.Path)
 	}
 }
 
@@ -151,4 +171,27 @@ func extractPromptLength(body []byte) int {
 		return 0
 	}
 	return len(req.Prompt)
+}
+
+func extractModel(body []byte) string {
+	var req struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return "unknown"
+	}
+	if req.Model == "" {
+		return "unknown"
+	}
+	return req.Model
+}
+
+func extractStream(body []byte) bool {
+	var req struct {
+		Stream bool `json:"stream"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return true
+	}
+	return req.Stream
 }

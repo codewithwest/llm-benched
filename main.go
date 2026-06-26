@@ -65,8 +65,9 @@ func main() {
 	mux := http.NewServeMux()
 
 	// 1. Dashboard API routes
-	mux.HandleFunc("/api/dashboard/stats", dashboardAPI.HandleGetStats)
-	mux.HandleFunc("/api/dashboard/models", dashboardAPI.HandleGetModels)
+	mux.HandleFunc("GET /api/dashboard/stats/{id}", dashboardAPI.HandleGetBenchmark)
+	mux.HandleFunc("GET /api/dashboard/stats", dashboardAPI.HandleGetStats)
+	mux.HandleFunc("GET /api/dashboard/models", dashboardAPI.HandleGetModels)
 	mux.HandleFunc("/api/dashboard/providers", func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost {
 			dashboardAPI.HandleAddProvider(w, req)
@@ -85,7 +86,7 @@ func main() {
 	// We create a root handler to route requests
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// If it's a UI request (root, index.html, assets/, etc)
-		if r.URL.Path == "/" || r.URL.Path == "/index.html" || strings.HasPrefix(r.URL.Path, "/assets/") {
+		if r.URL.Path == "/" || r.URL.Path == "/index.html" || strings.HasPrefix(r.URL.Path, "/assets/") || r.URL.Path == "/favicon.svg" || r.URL.Path == "/icons.svg" {
 			uiServer.ServeHTTP(w, r)
 			return
 		}

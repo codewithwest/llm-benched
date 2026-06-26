@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"llm-benchmarker/internal/db"
@@ -27,8 +28,6 @@ func (h *DashboardHandler) HandleGetStats(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// For a real app, we might also query an in-memory struct of active requests
-	// For now, we'll just return the historical benchmarks.
 	response := struct {
 		Benchmarks []db.Benchmark `json:"benchmarks"`
 		Active     []interface{}  `json:"active_requests"`
@@ -39,6 +38,24 @@ func (h *DashboardHandler) HandleGetStats(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *DashboardHandler) HandleGetBenchmark(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid id", http.StatusBadRequest)
+		return
+	}
+
+	b, err := h.DB.GetBenchmark(id)
+	if err != nil {
+		http.Error(w, "Benchmark not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(b)
 }
 
 func (h *DashboardHandler) HandleGetModels(w http.ResponseWriter, r *http.Request) {

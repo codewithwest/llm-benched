@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Activity, Send, X, Plus, Signal, BarChart3, Gauge, Cpu, Terminal } from 'lucide-react';
+import { Activity, Send, X, Plus, Signal, BarChart3, Gauge, Cpu, Terminal, List, FileText } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 function Select({ value, onChange, options, placeholder }: {
@@ -58,8 +58,129 @@ function Select({ value, onChange, options, placeholder }: {
   );
 }
 
+function Card({ s, onClick }: { s: any; onClick: () => void }) {
+  const ts = new Date(s.timestamp);
+  return (
+    <div
+      onClick={onClick}
+      className="rounded-2xl bg-[#0E1320]/50 border border-[#222B3D]/40 p-4 hover:translate-x-1 hover:border-[#FF00FF]/30 transition-all duration-250 cursor-pointer group"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono text-[#FF00FF]/60">#{s.id}</span>
+          <span className="text-xs font-mono bg-[#151C2E] px-2 py-0.5 rounded text-[#FF00FF]">{s.model_endpoint}</span>
+        </div>
+        <span className="text-[9px] font-mono text-[#7B8AA0]/60">{ts.toLocaleTimeString()}</span>
+      </div>
+      <div className="text-[11px] text-[#7B8AA0] font-mono truncate mb-3">{(s.prompt || '').substring(0, 120)}{(s.prompt || '').length > 120 ? '...' : ''}</div>
+      <div className="flex items-center gap-4 text-xs">
+        <div className="flex items-center gap-1">
+          <Gauge className="w-3 h-3 text-[#FF00FF]" />
+          <span className="font-mono text-[#F8FAFC] font-bold">{s.tps?.toFixed(1)}</span>
+          <span className="text-[#7B8AA0]">TPS</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Activity className="w-3 h-3 text-[#00FFA3]" />
+          <span className="font-mono text-[#F8FAFC] font-bold">{(s.ttft_ns / 1_000_000).toFixed(0)}</span>
+          <span className="text-[#7B8AA0]">ms</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="font-mono text-[#F8FAFC] font-bold">{s.total_tokens}</span>
+          <span className="text-[#7B8AA0]">tok</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function formatJSON(s: string): string {
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return s;
+  }
+}
+
+function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`/api/dashboard/stats/${id}`)
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
+      <div
+        className="bg-[#0E1320] border border-[#222B3D]/80 rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-[0_30px_80px_rgba(0,0,0,0.5)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 border-b border-[#222B3D]/60 flex items-center justify-between sticky top-0 bg-[#0E1320] z-10 rounded-t-3xl">
+          <div className="flex items-center gap-3">
+            <FileText className="w-4 h-4 text-[#FF00FF]" />
+            <h2 className="font-semibold text-sm text-[#F8FAFC]">Request #{id}</h2>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#222B3D]/60 transition-colors">
+            <X className="w-4 h-4 text-[#7B8AA0]" />
+          </button>
+        </div>
+
+        {loading && (
+          <div className="flex items-center justify-center py-20 text-[#7B8AA0] text-xs font-mono">Loading...</div>
+        )}
+
+        {!loading && data && (
+          <div className="p-6 space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="rounded-2xl bg-[#05070D] border border-[#222B3D]/60 p-4">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-1">TPS</div>
+                <div className="text-lg font-bold text-[#FF00FF] font-mono">{data.tps?.toFixed(2)}</div>
+              </div>
+              <div className="rounded-2xl bg-[#05070D] border border-[#222B3D]/60 p-4">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-1">TTFT</div>
+                <div className="text-lg font-bold text-[#00FFA3] font-mono">{(data.ttft_ns / 1_000_000).toFixed(0)} ms</div>
+              </div>
+              <div className="rounded-2xl bg-[#05070D] border border-[#222B3D]/60 p-4">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-1">Tokens</div>
+                <div className="text-lg font-bold text-[#F8FAFC] font-mono">{data.total_tokens}</div>
+              </div>
+              <div className="rounded-2xl bg-[#05070D] border border-[#222B3D]/60 p-4">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-1">Model</div>
+                <div className="text-lg font-bold text-[#F8FAFC] font-mono text-sm truncate">{data.model_endpoint}</div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-2">Request JSON</h3>
+              <pre className="bg-[#05070D] border border-[#222B3D]/60 rounded-xl p-4 text-[11px] font-mono text-[#F8FAFC]/80 overflow-x-auto max-h-[300px] overflow-y-auto whitespace-pre-wrap">
+                {formatJSON(data.request_body || '')}
+              </pre>
+            </div>
+
+            <div>
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-2">Response Body</h3>
+              <pre className="bg-[#05070D] border border-[#222B3D]/60 rounded-xl p-4 text-[11px] font-mono text-[#F8FAFC]/80 overflow-x-auto max-h-[300px] overflow-y-auto whitespace-pre-wrap">
+                {formatJSON(data.response_body || '')}
+              </pre>
+            </div>
+          </div>
+        )}
+
+        {!loading && !data && (
+          <div className="flex items-center justify-center py-20 text-[#7B8AA0] text-xs font-mono">Failed to load details</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'providers'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'providers'>('dashboard');
   const [stats, setStats] = useState<any[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [providers, setProviders] = useState<any[]>([]);
@@ -98,6 +219,7 @@ export default function App() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   const fetchData = async () => {
     try {
@@ -220,6 +342,8 @@ export default function App() {
     return true;
   });
 
+  const recentStats = filteredStats.slice(0, 5);
+
   const onlineCount = providers.filter((p) => p.status === 'online').length;
   const avgTps = stats.length
     ? (stats.reduce((sum, s) => sum + s.tps, 0) / stats.length).toFixed(1)
@@ -270,7 +394,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Ambient header stats */}
         <div className="hidden md:flex items-center gap-6">
           <div className="flex items-center gap-2 text-xs">
             <Signal className={`w-3.5 h-3.5 ${onlineCount > 0 ? 'text-[#00FFA3]' : 'text-[#7B8AA0]'}`} />
@@ -304,28 +427,42 @@ export default function App() {
       <nav className="relative z-10 flex gap-1 px-6 pt-4 bg-[#05070D]/60 backdrop-blur-xl">
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 ${
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${
             activeTab === 'dashboard'
               ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
               : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
           }`}
         >
-          Dashboard
+          <BarChart3 className="w-3.5 h-3.5" /> Dashboard
+        </button>
+        <button
+          onClick={() => setActiveTab('requests')}
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${
+            activeTab === 'requests'
+              ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
+              : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
+          }`}
+        >
+          <List className="w-3.5 h-3.5" /> Requests
+          {filteredStats.length > 0 && (
+            <span className="text-[9px] font-mono bg-[#FF00FF]/10 text-[#FF00FF] px-1.5 py-0.5 rounded-full">{filteredStats.length}</span>
+          )}
         </button>
         <button
           onClick={() => setActiveTab('providers')}
-          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 ${
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${
             activeTab === 'providers'
               ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
               : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
           }`}
         >
-          Providers
+          <Signal className="w-3.5 h-3.5" /> Providers
         </button>
       </nav>
 
       <main className="relative z-10 flex-1 px-6 pb-6 w-full">
 
+        {/* Dashboard Tab */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
 
@@ -357,72 +494,82 @@ export default function App() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-[#222B3D]/60 overflow-hidden bg-[#0E1320]/60">
-              <div className="px-6 py-4 border-b border-[#222B3D]/60 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-[#FF00FF]" />
-                  <h2 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0]">Activity</h2>
-                  {lastUpdated && (
-                    <span className="text-[9px] text-[#7B8AA0]/60 font-mono ml-2">updated {lastUpdated}</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-44">
-                    <Select
-                      value={filterEndpoint}
-                      onChange={setFilterEndpoint}
-                      options={[
-                        { value: '', label: 'All Endpoints' },
-                        ...uniqueEndpoints.map((e) => ({ value: e, label: e })),
-                      ]}
-                      placeholder="All Endpoints"
-                    />
-                  </div>
-                  <button
-                    onClick={fetchData}
-                    className="p-2 rounded-lg bg-[#0E1320] border border-[#222B3D] text-[#7B8AA0] hover:text-[#F8FAFC] hover:border-[#FF00FF]/50 transition-all duration-200 active:scale-95"
-                    title="Refresh"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-6 space-y-3 max-h-[400px] overflow-y-auto">
-                {filteredStats.length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-16 text-[#7B8AA0]">
-                    <Activity className="w-10 h-10 animate-pulse mb-4 opacity-50" />
-                    <p className="text-xs font-mono">Waiting for incoming traffic...</p>
-                  </div>
+            <section className="rounded-3xl bg-[#0E1320]/60 border border-[#222B3D]/60 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0] flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5 text-[#FF00FF]" /> Recent Activity
+                </h2>
+                {lastUpdated && (
+                  <span className="text-[9px] text-[#7B8AA0]/60 font-mono">updated {lastUpdated}</span>
                 )}
-                {filteredStats.map((s) => (
-                  <div
-                    key={s.id}
-                    className="rounded-2xl bg-[#0E1320]/50 border border-[#222B3D]/40 p-4 hover:translate-x-1 transition-all duration-250 group"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="text-[10px] font-mono text-[#FF00FF]/60">#{s.id}</span>
-                          <span className="text-xs font-mono bg-[#151C2E] px-2 py-0.5 rounded text-[#FF00FF]">{s.model_endpoint}</span>
-                        </div>
-                        <div className="text-[10px] text-[#7B8AA0] font-mono truncate max-w-[300px]">{s.provider_url}</div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-sm font-bold text-[#FF00FF] font-mono">{s.tps.toFixed(2)} TPS</div>
-                        <div className="text-[10px] text-[#7B8AA0] font-mono">{(s.ttft_ns / 1_000_000).toFixed(0)} ms · {s.total_tokens} tok</div>
-                        <div className="text-[9px] text-[#7B8AA0]/60 font-mono">prompt {s.prompt_length} · resp {s.response_length} B</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
               </div>
+              {recentStats.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-[#7B8AA0]">
+                  <Activity className="w-10 h-10 animate-pulse mb-4 opacity-50" />
+                  <p className="text-xs font-mono">Waiting for incoming traffic...</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {recentStats.map((s) => (
+                    <Card key={s.id} s={s} onClick={() => setDetailId(s.id)} />
+                  ))}
+                </div>
+              )}
             </section>
           </div>
         )}
 
+        {/* Requests Tab */}
+        {activeTab === 'requests' && (
+          <section className="rounded-3xl bg-[#0E1320]/60 border border-[#222B3D]/60 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <List className="w-4 h-4 text-[#FF00FF]" />
+                <h2 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0]">All Requests</h2>
+                {lastUpdated && (
+                  <span className="text-[9px] text-[#7B8AA0]/60 font-mono ml-2">updated {lastUpdated}</span>
+                )}
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-44">
+                  <Select
+                    value={filterEndpoint}
+                    onChange={setFilterEndpoint}
+                    options={[
+                      { value: '', label: 'All Endpoints' },
+                      ...uniqueEndpoints.map((e) => ({ value: e, label: e })),
+                    ]}
+                    placeholder="All Endpoints"
+                  />
+                </div>
+                <button
+                  onClick={fetchData}
+                  className="p-2 rounded-lg bg-[#0E1320] border border-[#222B3D] text-[#7B8AA0] hover:text-[#F8FAFC] hover:border-[#FF00FF]/50 transition-all duration-200 active:scale-95"
+                  title="Refresh"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {filteredStats.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 text-[#7B8AA0]">
+                <List className="w-10 h-10 animate-pulse mb-4 opacity-50" />
+                <p className="text-xs font-mono">Waiting for incoming traffic...</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {filteredStats.map((s) => (
+                  <Card key={s.id} s={s} onClick={() => setDetailId(s.id)} />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Providers Tab */}
         {activeTab === 'providers' && (
           <div className="max-w-3xl space-y-8">
             <div>
@@ -642,6 +789,11 @@ export default function App() {
           </button>
         </div>
       </div>
+
+      {/* Detail Modal */}
+      {detailId !== null && (
+        <DetailModal id={detailId} onClose={() => setDetailId(null)} />
+      )}
 
       {toast && (
         <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 bg-[#0E1320] border border-[#222B3D] rounded-xl text-xs font-mono text-[#F8FAFC] shadow-[0_10px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl animate-[fadeIn_0.2s_ease-out]">

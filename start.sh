@@ -3,6 +3,18 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+PIDFILE="/tmp/llm-benchmarker.pid"
+LOGFILE="llm-benchmarker.log"
+
+stop_old() {
+  if [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+    echo "==> Stopping old instance (PID $(cat "$PIDFILE"))..."
+    kill "$(cat "$PIDFILE")" 2>/dev/null || true
+    sleep 1
+    rm -f "$PIDFILE"
+  fi
+}
+
 build() {
   echo "==> Building frontend..."
   cd ui
@@ -24,36 +36,14 @@ build() {
 }
 
 run() {
-  echo "==> Starting llm-benchmarker $@"
-  echo "    Press r to rebuild, q to quit"
-  echo "    Use -intercept-port 11434 to intercept existing Ollama/LiteLLM traffic"
-  ./llm-benchmarker "$@" &
-  PID=$!
+  local args=("$@")
+  echo "==> Starting llm-benchmarker ${args[*]}"
+  nohup ./llm-benchmarker "${args[@]}" >> "$LOGFILE" 2>&1 &
+  local pid=$!
+  echo $pid > "$PIDFILE"
+  echo "==> PID $pid | tail -f $LOGFILE to watch | kill -TERM \$(cat $PIDFILE) to stop"
 }
 
-cleanup() {
-  echo
-  echo "==> Stopping..."
-  kill "$PID" 2>/dev/null || true
-  exit 0
-}
-trap cleanup SIGINT SIGTERM EXIT
-
+stop_old
 build
 run "$@"
-
-while true; do
-  read -rsn1 key
-  if [[ "$key" == "r" ]]; then
-    echo
-    echo "==> Rebuilding..."
-    kill "$PID" 2>/dev/null || true
-    build
-    run "$@"
-  elif [[ "$key" == "q" ]]; then
-    echo
-    echo "==> Stopping..."
-    kill "$PID" 2>/dev/null || true
-    exit 0
-  fi
-done

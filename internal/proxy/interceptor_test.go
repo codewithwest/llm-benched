@@ -84,8 +84,8 @@ func TestTrackingResponseWriter_TracksTokens(t *testing.T) {
 	if n != len(data) {
 		t.Errorf("expected %d bytes written, got %d", len(data), n)
 	}
-	if tracker.tokenCount != 2 {
-		t.Errorf("expected 2 tokens (2 newlines), got %d", tracker.tokenCount)
+	if tracker.streamTokenCount != 2 {
+		t.Errorf("expected 2 stream tokens (2 newlines), got %d", tracker.streamTokenCount)
 	}
 	if tracker.responseBytes != len(data) {
 		t.Errorf("expected responseBytes %d, got %d", len(data), tracker.responseBytes)
@@ -101,8 +101,8 @@ func TestTrackingResponseWriter_NoTokensForNonTarget(t *testing.T) {
 	}
 
 	tracker.Write([]byte("hello\nworld\n"))
-	if tracker.tokenCount != 0 {
-		t.Errorf("expected 0 tokens for non-target, got %d", tracker.tokenCount)
+	if tracker.tokenCount() != 0 {
+		t.Errorf("expected 0 tokens for non-target, got %d", tracker.tokenCount())
 	}
 	if tracker.responseBytes != 0 {
 		t.Errorf("expected 0 responseBytes for non-target, got %d", tracker.responseBytes)

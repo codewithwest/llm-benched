@@ -21,6 +21,8 @@ type Benchmark struct {
 	NetworkRTTNs   int64     `json:"network_rtt_ns"`
 	TotalTokens    int       `json:"total_tokens"`
 	ResponseLength int       `json:"response_length"`
+	RequestBody    string    `json:"request_body,omitempty"`
+	ResponseBody   string    `json:"response_body,omitempty"`
 }
 
 type Provider struct {
@@ -61,7 +63,9 @@ func InitDB(filepath string) (*Database, error) {
 		ttft_ns INTEGER,
 		network_rtt_ns INTEGER,
 		total_tokens INTEGER,
-		response_length INTEGER DEFAULT 0
+		response_length INTEGER DEFAULT 0,
+		request_body TEXT DEFAULT '',
+		response_body TEXT DEFAULT ''
 	);`
 
 	if _, err := db.Exec(createTableQuery); err != nil {
@@ -71,9 +75,9 @@ func InitDB(filepath string) (*Database, error) {
 	return &Database{db: db}, nil
 }
 
-func (d *Database) SaveBenchmark(prompt, endpoint, providerURL string, tps float64, ttftNs, rttNs int64, totalTokens, promptLength, responseLength int) error {
-	query := `INSERT INTO benchmarks (prompt, prompt_length, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens, response_length) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := d.db.Exec(query, prompt, promptLength, endpoint, providerURL, tps, ttftNs, rttNs, totalTokens, responseLength)
+func (d *Database) SaveBenchmark(prompt, endpoint, providerURL string, tps float64, ttftNs, rttNs int64, totalTokens, promptLength, responseLength int, requestBody, responseBody string) error {
+	query := `INSERT INTO benchmarks (prompt, prompt_length, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens, response_length, request_body, response_body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := d.db.Exec(query, prompt, promptLength, endpoint, providerURL, tps, ttftNs, rttNs, totalTokens, responseLength, requestBody, responseBody)
 	if err != nil {
 		log.Printf("Failed to save benchmark: %v", err)
 	}
@@ -88,7 +92,7 @@ func (d *Database) GetBenchmarks() ([]Benchmark, error) {
 	}
 	defer rows.Close()
 
-	var benchmarks []Benchmark
+	benchmarks := make([]Benchmark, 0)
 	for rows.Next() {
 		var b Benchmark
 		if err := rows.Scan(&b.ID, &b.Timestamp, &b.Prompt, &b.PromptLength, &b.ModelEndpoint, &b.ProviderURL, &b.TPS, &b.TTFTNs, &b.NetworkRTTNs, &b.TotalTokens, &b.ResponseLength); err != nil {
@@ -98,6 +102,16 @@ func (d *Database) GetBenchmarks() ([]Benchmark, error) {
 		benchmarks = append(benchmarks, b)
 	}
 	return benchmarks, nil
+}
+
+func (d *Database) GetBenchmark(id int) (*Benchmark, error) {
+	query := `SELECT id, timestamp, prompt, prompt_length, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens, response_length, request_body, response_body FROM benchmarks WHERE id = ?`
+	var b Benchmark
+	err := d.db.QueryRow(query, id).Scan(&b.ID, &b.Timestamp, &b.Prompt, &b.PromptLength, &b.ModelEndpoint, &b.ProviderURL, &b.TPS, &b.TTFTNs, &b.NetworkRTTNs, &b.TotalTokens, &b.ResponseLength, &b.RequestBody, &b.ResponseBody)
+	if err != nil {
+		return nil, err
+	}
+	return &b, nil
 }
 
 func (d *Database) AddProvider(name, url string) error {
