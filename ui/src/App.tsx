@@ -421,8 +421,8 @@ export default function App() {
       {/* Header */}
       <header className="relative z-50 px-8 py-4 border-b border-[#222B3D]/60 flex items-center justify-between bg-[#05070D]/80 backdrop-blur-xl sticky top-0">
         <div className="flex items-center gap-5">
-          <div className="w-10 h-10 rounded-xl bg-[#FF00FF] flex items-center justify-center shadow-[0_0_20px_rgba(255,0,255,0.3)]">
-            <BarChart3 className="text-black w-5 h-5" />
+          <div className="w-10 h-10 rounded-xl bg-[#0E1320] flex items-center justify-center">
+            <img src="/favicon.svg" alt="LLM-Benchmarker" className="w-8 h-8" />
           </div>
           <div>
             <h1 className="text-lg font-bold tracking-tight text-white">Neural Operations Center</h1>

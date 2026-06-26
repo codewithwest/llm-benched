@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <defs>
+    <radialGradient id="hubGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF00FF" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#FF00FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="connLine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00FFA3" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#FF00FF" stop-opacity="0.5"/>
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF00FF" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#222B3D" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#00FFA3" stop-opacity="0.15"/>
+    </linearGradient>
+    <filter id="neonGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Outer ring 1 -->
+  <circle cx="100" cy="100" r="88" stroke="url(#ringGrad)" stroke-width="1.5" stroke-dasharray="4 5"/>
+
+  <!-- Outer ring 2 (faint) -->
+  <circle cx="100" cy="100" r="94" stroke="#222B3D" stroke-width="0.5" stroke-dasharray="2 6"/>
+
+  <!-- Pulse rings -->
+  <circle cx="100" cy="100" r="52" stroke="#FF00FF" stroke-width="0.5" opacity="0.12"/>
+  <circle cx="100" cy="100" r="64" stroke="#FF00FF" stroke-width="0.5" opacity="0.08"/>
+
+  <!-- Neural connection lines (center → satellites) -->
+  <g opacity="0.5">
+    <line x1="100" y1="100" x2="38" y2="55" stroke="url(#connLine)" stroke-width="1.5"/>
+    <line x1="100" y1="100" x2="162" y2="55" stroke="url(#connLine)" stroke-width="1.5"/>
+    <line x1="100" y1="100" x2="28" y2="140" stroke="url(#connLine)" stroke-width="1.5"/>
+    <line x1="100" y1="100" x2="172" y2="140" stroke="url(#connLine)" stroke-width="1.5"/>
+    <line x1="100" y1="100" x2="100" y2="178" stroke="url(#connLine)" stroke-width="1.5"/>
+  </g>
+
+  <!-- Mesh connections between satellites -->
+  <g stroke="#1E2738" stroke-width="1" stroke-dasharray="2.5 3" opacity="0.6">
+    <line x1="38" y1="55" x2="162" y2="55"/>
+    <line x1="38" y1="55" x2="28" y2="140"/>
+    <line x1="162" y1="55" x2="172" y2="140"/>
+    <line x1="28" y1="140" x2="172" y2="140"/>
+    <line x1="38" y1="55" x2="100" y2="178"/>
+    <line x1="162" y1="55" x2="100" y2="178"/>
+  </g>
+
+  <!-- Central hub glow -->
+  <circle cx="100" cy="100" r="42" fill="url(#hubGlow)"/>
+
+  <!-- Central hub -->
+  <circle cx="100" cy="100" r="16" fill="#0E1320" stroke="#FF00FF" stroke-width="2.5" filter="url(#neonGlow)"/>
+  <circle cx="100" cy="100" r="7" fill="#FF00FF"/>
+  <circle cx="100" cy="100" r="3" fill="#F8FAFC" opacity="0.8"/>
+
+  <!-- Satellite nodes -->
+  <circle cx="38" cy="55" r="5" fill="#0E1320" stroke="#00FFA3" stroke-width="2"/>
+  <circle cx="162" cy="55" r="5" fill="#0E1320" stroke="#00FFA3" stroke-width="2"/>
+  <circle cx="28" cy="140" r="5" fill="#0E1320" stroke="#00FFA3" stroke-width="2"/>
+  <circle cx="172" cy="140" r="5" fill="#0E1320" stroke="#00FFA3" stroke-width="2"/>
+  <circle cx="100" cy="178" r="5" fill="#0E1320" stroke="#00FFA3" stroke-width="2"/>
+</svg>
