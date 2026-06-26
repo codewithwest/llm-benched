@@ -383,7 +383,7 @@ export default function App() {
       </div>
 
       {/* Header */}
-      <header className="relative z-10 px-8 py-4 border-b border-[#222B3D]/60 flex items-center justify-between bg-[#05070D]/80 backdrop-blur-xl sticky top-0">
+      <header className="relative z-50 px-8 py-4 border-b border-[#222B3D]/60 flex items-center justify-between bg-[#05070D]/80 backdrop-blur-xl sticky top-0">
         <div className="flex items-center gap-5">
           <div className="w-10 h-10 rounded-xl bg-[#FF00FF] flex items-center justify-center shadow-[0_0_20px_rgba(255,0,255,0.3)]">
             <BarChart3 className="text-black w-5 h-5" />
@@ -460,7 +460,7 @@ export default function App() {
         </button>
       </nav>
 
-      <main className="relative z-10 flex-1 px-6 pb-6 w-full">
+      <main className="flex-1 px-6 pb-6 w-full">
 
         {/* Dashboard Tab */}
         {activeTab === 'dashboard' && (

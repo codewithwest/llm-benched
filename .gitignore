@@ -1,5 +1,14 @@
+# Dependencies
+ui/node_modules/
+
+# Build artifacts
+llm-benchmarker
+llm-benchmarker-*
+ui/dist/
+
 # Runtime artifacts
 benchmarks.db
+*.db
 
 # OS files
 .DS_Store
@@ -12,5 +21,8 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Build artifacts
-llm-benchmarker
+# Log files
+*.log
+
+# Temp files
+/tmp/

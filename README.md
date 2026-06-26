@@ -1,124 +1,155 @@
-# LLM-Benchmarker 🚀
+# LLM-Benchmarker
 
-LLM-Benchmarker is an open-source, single-binary cross-platform desktop utility designed to measure the raw inference compute performance of local or network-attached LLM engines like **Ollama** and **llama.cpp**.
+[![CI](https://github.com/your-org/llm-benchmarker/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/llm-benchmarker/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/github/go-mod/go-version/your-org/llm-benchmarker)](https://go.dev/)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-With a beautiful glassmorphic dark-mode dashboard and a precise backend telemetry proxy, it calculates highly accurate metrics (TPS, True TTFT) by isolating the noise of network transport latency from raw token generation time.
+A transparent HTTP proxy that intercepts LLM API calls (Ollama, llama.cpp, OpenAI-compatible), captures full request/response data, and displays real-time telemetry through a web dashboard.
 
----
+- **No code changes** — sits between your client and LLM engine
+- **Captures everything** — full request JSON and response body for every call
+- **Live metrics** — TPS, TTFT, token count per request
+- **Searchable history** — filter by endpoint, click any request for details
+- **Single binary** — Go + embedded React UI, no runtime dependencies
 
-## 🏗 Architecture
+## Install
 
-LLM-Benchmarker uses a robust two-tier architecture cleanly compiled into a single executable:
+### Pre-built binaries
 
-1. **Frontend (Vite + React + TypeScript + TailwindCSS)**:
-   - A highly responsive, modern UI featuring a live floating telemetry dashboard.
-   - Communicates with the backend exclusively over a full-duplex WebSocket connection to minimize overhead.
-   
-2. **Backend (Go 1.25+)**:
-   - Upgrades incoming connections via `nhooyr.io/websocket`.
-   - Embeds the compiled React assets using Go's native `embed.FS`, serving everything without external dependencies.
-   - Proxies the generation request to the target engine, calculating real-time metrics.
-   - Persists benchmark history to a local pure-Go SQLite database (`modernc.org/sqlite`) ensuring CGO-free, seamless cross-compilation for macOS, Linux, and Windows.
+Download from [GitHub Releases](https://github.com/your-org/llm-benchmarker/releases):
 
----
+| Platform | File |
+|----------|------|
+| Linux x86_64 | `llm-benchmarker-linux-amd64` |
+| Linux ARM64 | `llm-benchmarker-linux-arm64` |
+| macOS Intel | `llm-benchmarker-darwin-amd64` |
+| macOS Apple Silicon | `llm-benchmarker-darwin-arm64` |
+| macOS Universal | `llm-benchmarker-darwin-universal` |
 
-## ⚡ Core Concept: Telemetry Isolation
-
-When running an LLM on a distributed local network (LAN) rather than the same physical machine as the UI, standard metric tracking is fundamentally flawed. If you simply measure the time elapsed from request to the first generated token arriving at the UI, you conflate **Network Round Trip Time (RTT)** with the engine's true **Time To First Token (TTFT)**.
-
-### How We Solve It
-Before opening the heavy stream, the Go proxy fires a lightweight `HEAD` request to sample the baseline network latency to the target machine. 
-
-As the token stream begins:
-`True TTFT = Observed TTFT (Proxy Client) - Baseline Network RTT`
-
-This subtraction ensures that if your local Wi-Fi drops a packet or experiences momentary jitter, the application will not falsely penalize the engine's recorded evaluation performance in the database.
-
----
-
-## 🛠 Building from Source
-
-To compile the single-binary application, you must first build the frontend assets, then compile the Go application.
-
-### Prerequisites
-- Node.js (v18+) and npm
-- Go (1.25+)
-
-### Steps
-
-1. **Build the React UI**
-   ```bash
-   cd ui
-   npm install
-   npm run build
-   cd ..
-   ```
-
-2. **Build the Go Binary**
-   ```bash
-   go mod tidy
-   # The resulting binary is completely statically linked and requires no C libraries
-   go build -buildvcs=false -o llm-benchmarker
-   ```
-
----
-
-## 🚀 Usage & Configuration
-
-Launch the compiled binary from your terminal. By default, it will start on port `8080` and target an Ollama instance running on the local machine (`127.0.0.1:11434`).
+### Build from source
 
 ```bash
+git clone https://github.com/your-org/llm-benchmarker.git
+cd llm-benchmarker
+
+# Build everything in one step:
+./start.sh
+
+# Or manually:
+cd ui && npm install && npm run build && cd ..
+go build -buildvcs=false -o llm-benchmarker .
+```
+
+Requires Go 1.25+ and Node.js 22+.
+
+## Quick Start
+
+Point it at a running Ollama instance:
+
+```bash
+# Ollama runs on the default port 11434
 ./llm-benchmarker
 ```
 
-### CLI Flags
+Open http://localhost:8080 in your browser. The dashboard loads — send a prompt through the chat panel. Every response is recorded as a card in the **Requests** tab.
 
-You can customize the execution by passing the following flags:
+### Transparent intercept mode
 
-| Flag | Description | Default | Example |
-| :--- | :--- | :--- | :--- |
-| `-port` | Port to serve the web UI | `8080` | `./llm-benchmarker -port 9000` |
-| `-target` | Remote engine target URL | `http://127.0.0.1:11434` | `./llm-benchmarker -target http://192.168.1.50:8080` |
-| `-db` | Path to the SQLite history file | `benchmarks.db` | `./llm-benchmarker -db /tmp/run.db` |
+Replace Ollama's port so existing clients are intercepted automatically:
 
-### Accessing the Dashboard
-Once running, simply open your browser and navigate to:
-**http://localhost:8080**
-
----
-
-## 🌐 Distributed Network Engine Configuration
-
-By default, LLM engines bind to localhost (`127.0.0.1`), meaning they will refuse network connections from the machine running the LLM-Benchmarker. To test remote nodes, you must configure the remote host to listen on all interfaces (`0.0.0.0`).
-
-### Target: Remote Ollama
-On the target machine running the model, set the `OLLAMA_HOST` variable before launching the daemon:
 ```bash
-OLLAMA_HOST=0.0.0.0 ollama serve
-```
-Then, launch the benchmarker on your primary machine:
-`./llm-benchmarker -target http://<remote-ip>:11434`
+# 1. Move Ollama to port 11435
+OLLAMA_HOST=0.0.0.0:11435 ollama serve
 
-### Target: Remote llama.cpp
-When launching `llama-server` on the target machine, pass the host flag explicitly:
+# 2. Run benchmarker on port 11434, forwarding to 11435
+./llm-benchmarker -port 8090 -intercept-port 11434 -target http://127.0.0.1:11435
+
+# 3. Any client hitting port 11434 gets intercepted and proxied to 11435
+```
+
+## CLI Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-port` | `8080` | Port for the web UI and API |
+| `-target` | `http://127.0.0.1:11434` | Upstream LLM engine URL |
+| `-intercept-port` | `0` | If set, also listen on this port as a transparent intercept proxy |
+| `-db` | `benchmarks.db` | Path to SQLite database file |
+
+## Dashboard
+
+### Dashboard tab
+- **KPIs** — active providers, average TPS, average TTFT, total requests
+- **TPS Trend** — real-time chart of tokens-per-second over time
+- **Recent Activity** — last 5 requests as clickable cards
+
+### Requests tab
+- Full history of all intercepted requests
+- Filter by endpoint
+- Click any card to open the **detail modal** showing:
+  - Telemetry (TPS, TTFT, tokens, model)
+  - Formatted **Request JSON**
+  - Formatted **Response Body**
+
+### Providers tab
+- Register and monitor remote LLM engine nodes
+- Each node is health-checked every 5 seconds
+- Select an active provider for the chat panel
+
+### Chat panel
+- FAB button (bottom-right) opens a streaming chat overlay
+- Select a model and provider, type a prompt, hit Enter
+- Response streams in real-time
+
+## Architecture
+
+```
+┌──────────────┐      ┌──────────────────┐      ┌──────────────┐
+│   Browser    │ HTTP  │  llm-benchmarker │ HTTP  │    Ollama    │
+│  (React UI)  │──────▶│   (Go Proxy)    │──────▶│  (Engine)    │
+│              │◀──────│                  │◀──────│              │
+└──────────────┘      │   ┌──────────┐   │      └──────────────┘
+                      │   │ SQLite   │   │
+                      │   │  store   │   │
+                      │   └──────────┘   │
+                      └──────────────────┘
+```
+
+1. Browser sends a prompt to the Go server
+2. Server forwards the request to the upstream LLM engine
+3. Response streams back to the browser in real-time
+4. On completion, full request/response is saved to SQLite
+
+The proxy handles both streaming and non-streaming responses, counting tokens by tracking newline-delimited JSON objects (streaming) and whitespace-separated words (non-streaming fallback).
+
+## Use Cases
+
+- **Benchmarking** — measure TPS, TTFT across different models and hardware
+- **Auditing** — inspect every prompt and response sent to your LLM
+- **Debugging** — see exactly what your client sends and what the engine returns
+- **Monitoring** — track usage patterns, response quality, latency trends
+
+## Development
+
 ```bash
-./llama-server -m model.gguf --host 0.0.0.0 --port 8080
+# Frontend dev server (hot reload)
+cd ui && npm run dev
+
+# Build everything
+./start.sh
+
+# Run tests
+go test ./internal/...
 ```
-Then, launch the benchmarker on your primary machine:
-`./llm-benchmarker -target http://<remote-ip>:8080`
 
----
+## CI/CD
 
-## 📊 The Dashboard UI
+Push to `main` triggers:
+- `ci.yml` — builds frontend, runs Go tests, compiles binary
 
-The user interface is broken down into intuitive segments:
-- **Connection Status**: Indicates whether the socket connection to the proxy handler is established.
-- **Inference Prompt**: The textarea where you input the context you wish to evaluate. Hitting `Enter` will initiate generation.
-- **Generation Output**: A scrollable glassmorphic pane that continuously streams standard Ollama or llama.cpp JSON outputs dynamically formatted into human text.
-- **Floating Telemetry**: Real-time pulses showing:
-  - **Eval Rate (TPS)**: Floating-point precision of tokens generated per second.
-  - **True TTFT**: Milliseconds taken by the engine to output the first evaluation token.
-  - **Network RTT**: The baseline network latency that was stripped from the TTFT.
-  - **Total Tokens**: The absolute number of tokens processed in the current stream.
+Push a tag (`v*`) triggers:
+- `release.yml` — cross-compiles for linux/darwin (amd64 + arm64), creates a macOS universal binary with `lipo`, publishes to GitHub Releases
 
-Every stream completion automatically fires a background commit to the local SQLite `benchmarks.db` file, cleanly storing the historical configuration for future analysis.
+## License
+
+MIT

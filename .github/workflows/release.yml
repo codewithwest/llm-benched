@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+    branches: [main]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+        working-directory: ui
+      - run: npm run build
+        working-directory: ui
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist
+
+  build:
+    needs: frontend
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: ui/dist
+      - run: GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -buildvcs=false -o llm-benchmarker-${{ matrix.suffix }} .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.suffix }}
+          path: llm-benchmarker-${{ matrix.suffix }}
+
+  universal:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-darwin-amd64
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary-darwin-arm64
+      - run: |
+          chmod +x llm-benchmarker-darwin-*
+          lipo -create llm-benchmarker-darwin-amd64 llm-benchmarker-darwin-arm64 -output llm-benchmarker-darwin-universal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary-darwin-universal
+          path: llm-benchmarker-darwin-universal
+
+  release:
+    needs: universal
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          merge-multiple: true
+      - run: chmod +x llm-benchmarker-* && ls -la
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: llm-benchmarker-*
+          generate_release_notes: true
