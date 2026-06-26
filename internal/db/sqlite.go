@@ -72,6 +72,10 @@ func InitDB(filepath string) (*Database, error) {
 		return nil, err
 	}
 
+	// Migrate old DBs: add columns that may not exist yet
+	db.Exec("ALTER TABLE benchmarks ADD COLUMN request_body TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE benchmarks ADD COLUMN response_body TEXT DEFAULT ''")
+
 	return &Database{db: db}, nil
 }
 
