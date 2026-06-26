@@ -21,6 +21,8 @@ type Benchmark struct {
 	NetworkRTTNs   int64     `json:"network_rtt_ns"`
 	TotalTokens    int       `json:"total_tokens"`
 	ResponseLength int       `json:"response_length"`
+	ClientIP       string    `json:"client_ip"`
+	DurationMs     int64     `json:"duration_ms"`
 	RequestBody    string    `json:"request_body,omitempty"`
 	ResponseBody   string    `json:"response_body,omitempty"`
 }
@@ -64,6 +66,8 @@ func InitDB(filepath string) (*Database, error) {
 		network_rtt_ns INTEGER,
 		total_tokens INTEGER,
 		response_length INTEGER DEFAULT 0,
+		client_ip TEXT DEFAULT '',
+		duration_ms INTEGER DEFAULT 0,
 		request_body TEXT DEFAULT '',
 		response_body TEXT DEFAULT ''
 	);`
@@ -75,13 +79,15 @@ func InitDB(filepath string) (*Database, error) {
 	// Migrate old DBs: add columns that may not exist yet
 	db.Exec("ALTER TABLE benchmarks ADD COLUMN request_body TEXT DEFAULT ''")
 	db.Exec("ALTER TABLE benchmarks ADD COLUMN response_body TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE benchmarks ADD COLUMN client_ip TEXT DEFAULT ''")
+	db.Exec("ALTER TABLE benchmarks ADD COLUMN duration_ms INTEGER DEFAULT 0")
 
 	return &Database{db: db}, nil
 }
 
-func (d *Database) SaveBenchmark(prompt, endpoint, providerURL string, tps float64, ttftNs, rttNs int64, totalTokens, promptLength, responseLength int, requestBody, responseBody string) error {
-	query := `INSERT INTO benchmarks (prompt, prompt_length, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens, response_length, request_body, response_body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := d.db.Exec(query, prompt, promptLength, endpoint, providerURL, tps, ttftNs, rttNs, totalTokens, responseLength, requestBody, responseBody)
+func (d *Database) SaveBenchmark(prompt, endpoint, providerURL, clientIP string, tps float64, ttftNs, rttNs, durationMs int64, totalTokens, promptLength, responseLength int, requestBody, responseBody string) error {
+	query := `INSERT INTO benchmarks (prompt, prompt_length, model_endpoint, provider_url, client_ip, duration_ms, tps, ttft_ns, network_rtt_ns, total_tokens, response_length, request_body, response_body) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := d.db.Exec(query, prompt, promptLength, endpoint, providerURL, clientIP, durationMs, tps, ttftNs, rttNs, totalTokens, responseLength, requestBody, responseBody)
 	if err != nil {
 		log.Printf("Failed to save benchmark: %v", err)
 	}
@@ -89,7 +95,7 @@ func (d *Database) SaveBenchmark(prompt, endpoint, providerURL string, tps float
 }
 
 func (d *Database) GetBenchmarks() ([]Benchmark, error) {
-	query := `SELECT id, timestamp, prompt, prompt_length, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens, response_length FROM benchmarks ORDER BY id DESC LIMIT 200`
+	query := `SELECT id, timestamp, prompt, prompt_length, model_endpoint, provider_url, client_ip, duration_ms, tps, ttft_ns, network_rtt_ns, total_tokens, response_length FROM benchmarks ORDER BY id DESC LIMIT 200`
 	rows, err := d.db.Query(query)
 	if err != nil {
 		return nil, err
@@ -99,7 +105,7 @@ func (d *Database) GetBenchmarks() ([]Benchmark, error) {
 	benchmarks := make([]Benchmark, 0)
 	for rows.Next() {
 		var b Benchmark
-		if err := rows.Scan(&b.ID, &b.Timestamp, &b.Prompt, &b.PromptLength, &b.ModelEndpoint, &b.ProviderURL, &b.TPS, &b.TTFTNs, &b.NetworkRTTNs, &b.TotalTokens, &b.ResponseLength); err != nil {
+		if err := rows.Scan(&b.ID, &b.Timestamp, &b.Prompt, &b.PromptLength, &b.ModelEndpoint, &b.ProviderURL, &b.ClientIP, &b.DurationMs, &b.TPS, &b.TTFTNs, &b.NetworkRTTNs, &b.TotalTokens, &b.ResponseLength); err != nil {
 			log.Printf("Failed to scan benchmark row: %v", err)
 			continue
 		}
@@ -109,9 +115,9 @@ func (d *Database) GetBenchmarks() ([]Benchmark, error) {
 }
 
 func (d *Database) GetBenchmark(id int) (*Benchmark, error) {
-	query := `SELECT id, timestamp, prompt, prompt_length, model_endpoint, provider_url, tps, ttft_ns, network_rtt_ns, total_tokens, response_length, request_body, response_body FROM benchmarks WHERE id = ?`
+	query := `SELECT id, timestamp, prompt, prompt_length, model_endpoint, provider_url, client_ip, duration_ms, tps, ttft_ns, network_rtt_ns, total_tokens, response_length, request_body, response_body FROM benchmarks WHERE id = ?`
 	var b Benchmark
-	err := d.db.QueryRow(query, id).Scan(&b.ID, &b.Timestamp, &b.Prompt, &b.PromptLength, &b.ModelEndpoint, &b.ProviderURL, &b.TPS, &b.TTFTNs, &b.NetworkRTTNs, &b.TotalTokens, &b.ResponseLength, &b.RequestBody, &b.ResponseBody)
+	err := d.db.QueryRow(query, id).Scan(&b.ID, &b.Timestamp, &b.Prompt, &b.PromptLength, &b.ModelEndpoint, &b.ProviderURL, &b.ClientIP, &b.DurationMs, &b.TPS, &b.TTFTNs, &b.NetworkRTTNs, &b.TotalTokens, &b.ResponseLength, &b.RequestBody, &b.ResponseBody)
 	if err != nil {
 		return nil, err
 	}

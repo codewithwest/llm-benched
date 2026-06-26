@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -123,16 +124,27 @@ func (p *TransparentProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			tps = float64(tracker.tokenCount()) / elapsed.Seconds()
 		}
 
-		log.Printf("← %s | %d tokens | %.2f TPS | TTFT: %dms | model: %s",
-			r.URL.Path, tracker.tokenCount(), tps, ttftNs/1_000_000, modelName)
+		clientIP := r.Header.Get("X-Forwarded-For")
+		if clientIP == "" {
+			if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+				clientIP = host
+			} else {
+				clientIP = r.RemoteAddr
+			}
+		}
+
+		log.Printf("← %s | %d tokens | %.2f TPS | TTFT: %dms | model: %s | IP: %s | %dms",
+			r.URL.Path, tracker.tokenCount(), tps, ttftNs/1_000_000, modelName, clientIP, elapsed.Milliseconds())
 
 		err := p.DB.SaveBenchmark(
 			prompt,
 			r.URL.Path,
 			targetHost.String(),
+			clientIP,
 			tps,
 			ttftNs,
 			0,
+			elapsed.Milliseconds(),
 			tracker.tokenCount(),
 			promptLength,
 			tracker.responseBytes,

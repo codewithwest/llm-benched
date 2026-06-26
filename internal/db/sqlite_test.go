@@ -19,7 +19,7 @@ func TestSaveAndGetBenchmarks(t *testing.T) {
 	}
 	defer d.Close()
 
-	err = d.SaveBenchmark("hello", "/api/generate", "http://localhost:11434", 15.5, 1000000, 500000, 150, 5, 500, `{"model":"test"}`, `{"response":"world"}`)
+	err = d.SaveBenchmark("hello", "/api/generate", "http://localhost:11434", "127.0.0.1", 15.5, 1000000, 500000, 2500, 150, 5, 500, `{"model":"test"}`, `{"response":"world"}`)
 	if err != nil {
 		t.Fatalf("SaveBenchmark failed: %v", err)
 	}
@@ -57,6 +57,12 @@ func TestSaveAndGetBenchmarks(t *testing.T) {
 	}
 	if b.TotalTokens != 150 {
 		t.Errorf("expected TotalTokens 150, got %d", b.TotalTokens)
+	}
+	if b.ClientIP != "127.0.0.1" {
+		t.Errorf("expected ClientIP '127.0.0.1', got %q", b.ClientIP)
+	}
+	if b.DurationMs != 2500 {
+		t.Errorf("expected DurationMs 2500, got %d", b.DurationMs)
 	}
 
 	// Test GetBenchmark detail
@@ -183,7 +189,7 @@ func TestMultipleBenchmarks(t *testing.T) {
 	defer d.Close()
 
 	for i := 0; i < 5; i++ {
-		d.SaveBenchmark("prompt", "/api/generate", "http://localhost:11434", float64(i)*10, int64(i)*1000, 0, i*100, 6, 0, "", "")
+		d.SaveBenchmark("prompt", "/api/generate", "http://localhost:11434", "10.0.0.1", float64(i)*10, int64(i)*1000, 0, int64(i)*500, i*100, 6, 0, "", "")
 	}
 
 	benchmarks, err := d.GetBenchmarks()

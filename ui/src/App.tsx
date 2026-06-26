@@ -89,16 +89,38 @@ function Card({ s, onClick }: { s: any; onClick: () => void }) {
           <span className="text-[#7B8AA0]">tok</span>
         </div>
       </div>
+      <div className="flex items-center gap-3 mt-2 text-[10px] font-mono text-[#7B8AA0]/60">
+        <span>{s.client_ip || 'unknown'}</span>
+        <span>·</span>
+        <span>{s.duration_ms >= 1000 ? (s.duration_ms / 1000).toFixed(1) + 's' : s.duration_ms + 'ms'}</span>
+      </div>
     </div>
   );
 }
 
 function formatJSON(s: string): string {
+  if (!s) return '';
   try {
     return JSON.stringify(JSON.parse(s), null, 2);
-  } catch {
-    return s;
+  } catch {}
+  const lines = s.split('\n').filter(Boolean);
+  const formatted = lines.map((l) => {
+    try { return JSON.stringify(JSON.parse(l), null, 2); } catch { return l; }
+  }).join('\n');
+  return formatted;
+}
+
+function extractResponseText(s: string): string {
+  if (!s) return '';
+  const lines = s.split('\n').filter(Boolean);
+  let text = '';
+  for (const l of lines) {
+    try {
+      const parsed = JSON.parse(l);
+      if (parsed.response) text += parsed.response;
+    } catch {}
   }
+  return text || '(non-streaming — see raw body below)';
 }
 
 function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
@@ -153,6 +175,14 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
                 <div className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-1">Model</div>
                 <div className="text-lg font-bold text-[#F8FAFC] font-mono text-sm truncate">{data.model_endpoint}</div>
               </div>
+              <div className="rounded-2xl bg-[#05070D] border border-[#222B3D]/60 p-4">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-1">Duration</div>
+                <div className="text-lg font-bold text-[#FFD700] font-mono">{data.duration_ms >= 1000 ? (data.duration_ms / 1000).toFixed(1) + ' s' : data.duration_ms + ' ms'}</div>
+              </div>
+              <div className="rounded-2xl bg-[#05070D] border border-[#222B3D]/60 p-4">
+                <div className="text-[9px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-1">Client IP</div>
+                <div className="text-lg font-bold text-[#F8FAFC] font-mono text-sm truncate">{data.client_ip || 'unknown'}</div>
+              </div>
             </div>
 
             <div>
@@ -163,8 +193,15 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
             </div>
 
             <div>
-              <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-2">Response Body</h3>
-              <pre className="bg-[#05070D] border border-[#222B3D]/60 rounded-xl p-4 text-[11px] font-mono text-[#F8FAFC]/80 overflow-x-auto max-h-[300px] overflow-y-auto whitespace-pre-wrap">
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-2">Response Text</h3>
+              <pre className="bg-[#05070D] border border-[#222B3D]/60 rounded-xl p-4 text-[11px] font-mono text-[#F8FAFC]/80 overflow-x-auto max-h-[200px] overflow-y-auto whitespace-pre-wrap">
+                {extractResponseText(data.response_body || '')}
+              </pre>
+            </div>
+
+            <div>
+              <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0] mb-2">Raw Response (formatted)</h3>
+              <pre className="bg-[#05070D] border border-[#222B3D]/60 rounded-xl p-4 text-[11px] font-mono text-[#F8FAFC]/80 overflow-x-auto max-h-[200px] overflow-y-auto whitespace-pre-wrap">
                 {formatJSON(data.response_body || '')}
               </pre>
             </div>
@@ -379,7 +416,6 @@ export default function App() {
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute left-0 top-0 w-[70vw] h-[70vw] bg-fuchsia-500/10 blur-[200px] animate-[pulse_14s_ease-in-out_infinite]" />
         <div className="absolute right-0 bottom-0 w-[50vw] h-[50vw] bg-cyan-500/10 blur-[250px] animate-[pulse_18s_ease-in-out_infinite]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent,#05070D)]" />
       </div>
 
       {/* Header */}
