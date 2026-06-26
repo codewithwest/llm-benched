@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"llm-benchmarker/internal/api"
 	"llm-benchmarker/internal/db"
 )
 
@@ -154,6 +155,8 @@ func (p *TransparentProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			log.Printf("Failed to save intercepted telemetry: %v", err)
 		}
+
+		api.GlobalMetrics.Record(modelName, tracker.tokenCount(), tps, ttftNs, elapsed.Milliseconds())
 	} else if isTarget {
 		log.Printf("← %s | 0 tokens (non-streaming or empty response)", r.URL.Path)
 	}
