@@ -1,7 +1,8 @@
 {
-  "name": "ui",
+  "name": "llm-benchmarker",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "Transparent HTTP proxy for Ollama, llama.cpp, and OpenAI-compatible LLMs. Captures full request/response data with real-time TPS, TTFT, and token tracking via a web dashboard.",
   "type": "module",
   "scripts": {
     "dev": "vite",
