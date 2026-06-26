@@ -8,8 +8,14 @@ A transparent HTTP proxy that intercepts LLM API calls (Ollama, llama.cpp, OpenA
 
 - **No code changes** — sits between your client and LLM engine
 - **Captures everything** — full request JSON and response body for every call
-- **Live metrics** — TPS, TTFT, token count per request
+- **Live metrics** — TPS, TTFT, token count per request, per-model
 - **Searchable history** — filter by endpoint, click any request for details
+- **Request Replay** — re-send any captured request and see the result inline
+- **Benchmark Suite** — context-scaling, parallel-scaling, and combined load tests
+- **Scheduling** — run benchmarks on a cron preset (5m, 15m, hourly, daily)
+- **Alert Thresholds** — define rules (TPS < 10, TTFT > 5000ms) that flag matching requests
+- **Session Grouping** — requests grouped by client IP
+- **Prometheus Metrics** — `/metrics` endpoint exposes standard LLM telemetry
 - **Single binary** — Go + embedded React UI, no runtime dependencies
 
 ## Install
@@ -79,22 +85,38 @@ OLLAMA_HOST=0.0.0.0:11435 ollama serve
 ## Dashboard
 
 ### Dashboard tab
-- **KPIs** — active providers, average TPS, average TTFT, total requests
+- **KPIs** — active providers, average TPS, average TTFT, total requests, triggered alerts
 - **TPS Trend** — real-time chart of tokens-per-second over time
 - **Recent Activity** — last 5 requests as clickable cards
+- **Active Sessions** — unique client IPs with request count and model list
 
 ### Requests tab
 - Full history of all intercepted requests
 - Filter by endpoint
 - Click any card to open the **detail modal** showing:
-  - Telemetry (TPS, TTFT, tokens, model)
+  - Telemetry (TPS, TTFT, tokens, model, client IP, duration)
   - Formatted **Request JSON**
   - Formatted **Response Body**
+  - **Replay** button — re-sends the original request and shows the live result inline
 
 ### Providers tab
 - Register and monitor remote LLM engine nodes
 - Each node is health-checked every 5 seconds
 - Select an active provider for the chat panel
+
+### Benchmarks tab
+- **Run Tests** — select a model from an active provider, then run:
+  - **Context Scaling** — tests prompt lengths of 256, 512, 1024, 2048, 4096, 8192 tokens
+  - **Parallel Scaling** — tests 1, 2, 4, 8 concurrent requests
+  - **Combined Matrix** — 5 context-sizes × 3 concurrency levels (full suite)
+- **Run History** — table with status, model, score, and test types
+- **Detail View** — per-test tables (context, tokens, TPS, TTFT, duration), TPS/TTFT bar charts, LLM-generated summary report, CSV/JSON export
+- **Comparison** — check two runs and view side-by-side LLM reports
+- **Scheduling** — add/remove schedules with presets (5m, 15m, 30m, hourly, daily, weekly); background scheduler auto-launches them
+
+### Settings tab
+- **Active Alerts** — shows currently triggered thresholds (metric, value, actual, model, timestamp)
+- **Alert Thresholds** — configure rules with metric (TPS, TTFT, duration), operator (<, >), value, and optional model filter
 
 ### Chat panel
 - FAB button (bottom-right) opens a streaming chat overlay

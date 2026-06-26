@@ -1,62 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { Activity, Send, X, Plus, Signal, BarChart3, Gauge, Cpu, Terminal, List, FileText } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Activity, Send, X, Plus, Signal, BarChart3, Gauge, Cpu, Terminal, List, FileText, FlaskConical, Settings } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-
-function Select({ value, onChange, options, placeholder }: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-  placeholder: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handle = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handle);
-    return () => document.removeEventListener('mousedown', handle);
-  }, []);
-
-  const selected = options.find((o) => o.value === value);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        className="w-full bg-[#0E1320] border border-[#222B3D] rounded-lg px-3 py-2 text-xs font-mono text-left transition-colors hover:border-[#FF00FF]/50 focus:border-[#FF00FF]/50 outline-none flex items-center justify-between gap-2"
-      >
-        <span className={selected ? 'text-[#F8FAFC]' : 'text-[#7B8AA0]/50'}>
-          {selected ? selected.label : placeholder}
-        </span>
-        <svg className={`w-3 h-3 text-[#7B8AA0] transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-      {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-[#151C2E] border border-[#222B3D] rounded-xl overflow-hidden z-[100] shadow-xl shadow-black/50">
-          {options.length === 0 && (
-            <div className="px-3 py-2.5 text-xs text-[#7B8AA0]/50 font-mono text-center">{placeholder}</div>
-          )}
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => { onChange(opt.value); setOpen(false); }}
-              className={`w-full px-3 py-2 text-xs font-mono text-left transition-colors hover:bg-[#FF00FF]/10 ${
-                value === opt.value ? 'text-[#FF00FF] bg-[#FF00FF]/5 font-bold' : 'text-[#F8FAFC]'
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+import BenchmarkPanel from './BenchmarkPanel';
+import Select from './Select';
 
 function Card({ s, onClick }: { s: any; onClick: () => void }) {
   const ts = new Date(s.timestamp);
@@ -102,7 +48,7 @@ function formatJSON(s: string): string {
   if (!s) return '';
   try {
     return JSON.stringify(JSON.parse(s), null, 2);
-  } catch {}
+  } catch { }
   const lines = s.split('\n').filter(Boolean);
   const formatted = lines.map((l) => {
     try { return JSON.stringify(JSON.parse(l), null, 2); } catch { return l; }
@@ -118,7 +64,7 @@ function extractResponseText(s: string): string {
     try {
       const parsed = JSON.parse(l);
       if (parsed.response) text += parsed.response;
-    } catch {}
+    } catch { }
   }
   return text || '(non-streaming — see raw body below)';
 }
@@ -126,6 +72,8 @@ function extractResponseText(s: string): string {
 function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [replayResult, setReplayResult] = useState<any>(null);
+  const [replaying, setReplaying] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -135,6 +83,16 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
       .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleReplay = async () => {
+    setReplaying(true);
+    setReplayResult(null);
+    try {
+      const res = await fetch(`/api/replay/${id}`, { method: 'POST' });
+      setReplayResult(res.ok ? await res.json() : { status: res.status, body: await res.text() });
+    } catch { setReplayResult({ status: 0, body: 'Request failed' }); }
+    setReplaying(false);
+  };
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={onClose}>
@@ -147,9 +105,19 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
             <FileText className="w-4 h-4 text-[#FF00FF]" />
             <h2 className="font-semibold text-sm text-[#F8FAFC]">Request #{id}</h2>
           </div>
-          <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#222B3D]/60 transition-colors">
-            <X className="w-4 h-4 text-[#7B8AA0]" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleReplay}
+              disabled={replaying || !data?.request_body}
+              className="px-3 py-1.5 rounded-lg bg-[#0E1320] border border-[#222B3D] text-[10px] font-mono text-[#FF00FF] hover:border-[#FF00FF]/50 transition-all disabled:opacity-30 flex items-center gap-1"
+            >
+              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              {replaying ? 'Replaying...' : 'Replay'}
+            </button>
+            <button onClick={onClose} className="p-2 rounded-lg hover:bg-[#222B3D]/60 transition-colors">
+              <X className="w-4 h-4 text-[#7B8AA0]" />
+            </button>
+          </div>
         </div>
 
         {loading && (
@@ -205,6 +173,20 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
                 {formatJSON(data.response_body || '')}
               </pre>
             </div>
+
+            {replayResult && (
+              <div className="border-t border-[#FF00FF]/20 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-[10px] font-bold uppercase tracking-widest text-[#FF00FF]">Replay Result</h3>
+                  <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${replayResult.status === 200 ? 'text-[#00FFA3] bg-[#00FFA3]/10' : 'text-red-400 bg-red-400/10'}`}>
+                    {replayResult.status}
+                  </span>
+                </div>
+                <pre className="bg-[#05070D] border border-[#222B3D]/60 rounded-xl p-4 text-[11px] font-mono text-[#F8FAFC]/80 overflow-x-auto max-h-[300px] overflow-y-auto whitespace-pre-wrap">
+                  {(() => { try { return JSON.stringify(JSON.parse(replayResult.body), null, 2); } catch { return replayResult.body; } })()}
+                </pre>
+              </div>
+            )}
           </div>
         )}
 
@@ -216,11 +198,63 @@ function DetailModal({ id, onClose }: { id: number; onClose: () => void }) {
   );
 }
 
+function ThresholdForm({ onCreated }: { onCreated: () => void }) {
+  const [metric, setMetric] = useState('tps');
+  const [operator, setOperator] = useState('lt');
+  const [value, setValue] = useState('10');
+  const [model, setModel] = useState('');
+  return (
+    <div className="flex items-end gap-2 flex-wrap">
+      <div className="w-24">
+        <Select
+          value={metric}
+          onChange={setMetric}
+          options={[
+            { value: 'tps', label: 'TPS' },
+            { value: 'ttft_ms', label: 'TTFT (ms)' },
+            { value: 'duration_ms', label: 'Duration (ms)' },
+          ]}
+          placeholder="Metric"
+        />
+      </div>
+      <div className="w-32">
+        <Select
+          value={operator}
+          onChange={setOperator}
+          options={[
+            { value: 'lt', label: '< (below)' },
+            { value: 'gt', label: '> (above)' },
+          ]}
+          placeholder="Operator"
+        />
+      </div>
+      <input type="number" value={value} onChange={e => setValue(e.target.value)}
+        className="bg-[#0E1320] border border-[#222B3D] rounded-lg px-3 py-2 text-[10px] font-mono text-[#F8FAFC] w-20" />
+      <input type="text" placeholder="model (optional)" value={model} onChange={e => setModel(e.target.value)}
+        className="bg-[#0E1320] border border-[#222B3D] rounded-lg px-3 py-2 text-[10px] font-mono text-[#F8FAFC] w-28" />
+      <button onClick={async () => {
+        await fetch('/api/thresholds', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ metric, operator, value: parseFloat(value), model }),
+        });
+        onCreated();
+      }} className="px-4 py-2 bg-[#FF00FF] text-black rounded-lg text-[10px] font-mono font-bold">Add</button>
+    </div>
+  );
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'providers'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'providers' | 'benchmarks' | 'settings'>(() => {
+    const hash = window.location.hash.replace('#', '');
+    return (['dashboard', 'requests', 'providers', 'benchmarks', 'settings'] as const).includes(hash as any) ? hash as any : 'dashboard';
+  });
   const [stats, setStats] = useState<any[]>([]);
   const [models, setModels] = useState<string[]>([]);
   const [providers, setProviders] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
+  const [thresholds, setThresholds] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
 
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [activeProviderURL, setActiveProviderURL] = useState<string>('');
@@ -260,10 +294,11 @@ export default function App() {
 
   const fetchData = async () => {
     try {
-      const [statRes, modRes, provRes] = await Promise.all([
+      const [statRes, modRes, provRes, sessRes] = await Promise.all([
         fetch('/api/dashboard/stats').catch(() => null),
         fetch('/api/dashboard/models').catch(() => null),
         fetch('/api/dashboard/providers').catch(() => null),
+        fetch('/api/sessions').catch(() => null),
       ]);
 
       if (statRes) {
@@ -278,6 +313,13 @@ export default function App() {
         const p = await provRes.json();
         setProviders(p.providers || []);
       }
+      if (sessRes) setSessions(await sessRes.json());
+      try {
+        const thRes = await fetch('/api/thresholds');
+        if (thRes.ok) setThresholds(await thRes.json());
+        const alRes = await fetch('/api/alerts/check');
+        if (alRes.ok) setAlerts(await alRes.json());
+      } catch {}
       setLastUpdated(new Date().toLocaleTimeString());
     } catch {
       // silent
@@ -301,6 +343,21 @@ export default function App() {
       setActiveProviderURL(providers[0].url);
     }
   }, [providers]);
+
+  useEffect(() => {
+    window.location.hash = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    const handler = () => {
+      const hash = window.location.hash.replace('#', '');
+      if ((['dashboard', 'requests', 'providers', 'benchmarks', 'settings'] as const).includes(hash as any)) {
+        setActiveTab(hash as any);
+      }
+    };
+    window.addEventListener('hashchange', handler);
+    return () => window.removeEventListener('hashchange', handler);
+  }, []);
 
   const handleAddProvider = async () => {
     if (!providerName || !providerHost) return;
@@ -379,7 +436,7 @@ export default function App() {
     return true;
   });
 
-  const recentStats = filteredStats.slice(0, 5);
+  const recentStats = filteredStats.slice(0, 6);
 
   const onlineCount = providers.filter((p) => p.status === 'online').length;
   const avgTps = stats.length
@@ -463,21 +520,19 @@ export default function App() {
       <nav className="relative z-10 flex gap-1 px-6 pt-4 bg-[#05070D]/60 backdrop-blur-xl">
         <button
           onClick={() => setActiveTab('dashboard')}
-          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${
-            activeTab === 'dashboard'
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${activeTab === 'dashboard'
               ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
               : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
-          }`}
+            }`}
         >
           <BarChart3 className="w-3.5 h-3.5" /> Dashboard
         </button>
         <button
           onClick={() => setActiveTab('requests')}
-          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${
-            activeTab === 'requests'
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${activeTab === 'requests'
               ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
               : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
-          }`}
+            }`}
         >
           <List className="w-3.5 h-3.5" /> Requests
           {filteredStats.length > 0 && (
@@ -486,13 +541,30 @@ export default function App() {
         </button>
         <button
           onClick={() => setActiveTab('providers')}
-          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${
-            activeTab === 'providers'
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${activeTab === 'providers'
               ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
               : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
-          }`}
+            }`}
         >
           <Signal className="w-3.5 h-3.5" /> Providers
+        </button>
+        <button
+          onClick={() => setActiveTab('benchmarks')}
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${activeTab === 'benchmarks'
+              ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
+              : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
+            }`}
+        >
+          <FlaskConical className="w-3.5 h-3.5" /> Benchmarks
+        </button>
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={`px-5 py-2.5 rounded-t-xl text-xs font-semibold tracking-widest uppercase transition-all duration-250 flex items-center gap-2 ${activeTab === 'settings'
+              ? 'bg-[#0E1320] text-[#FF00FF] border border-[#222B3D]/60 border-b-0'
+              : 'text-[#7B8AA0] hover:text-[#F8FAFC] border border-transparent'
+            }`}
+        >
+          <Settings className="w-3.5 h-3.5" /> Settings
         </button>
       </nav>
 
@@ -552,6 +624,25 @@ export default function App() {
                 </div>
               )}
             </section>
+
+            {sessions.length > 0 && (
+              <section className="rounded-3xl bg-[#0E1320]/60 border border-[#222B3D]/60 p-6">
+                <h2 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0] flex items-center gap-2 mb-4">
+                  <Activity className="w-3.5 h-3.5 text-[#FF00FF]" /> Active Sessions ({sessions.length})
+                </h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {sessions.slice(0, 8).map((s: any) => (
+                    <div key={s.client_ip} className="rounded-xl bg-[#05070D] border border-[#222B3D]/40 p-3">
+                      <div className="text-xs font-mono text-[#F8FAFC] font-bold truncate">{s.client_ip}</div>
+                      <div className="flex items-center gap-3 text-[9px] font-mono text-[#7B8AA0] mt-1">
+                        <span>{s.count} req</span>
+                        <span>{s.models?.split(',').length} m</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
         )}
 
@@ -628,28 +719,25 @@ export default function App() {
                     <div
                       key={p.id}
                       onClick={() => setActiveProviderURL(p.url)}
-                      className={`relative rounded-2xl overflow-hidden p-5 group transition-all duration-500 cursor-pointer ${
-                        activeProviderURL === p.url
+                      className={`relative rounded-2xl overflow-hidden p-5 group transition-all duration-500 cursor-pointer ${activeProviderURL === p.url
                           ? 'bg-gradient-to-br from-fuchsia-500/20 to-[#0E1320] border-fuchsia-500 scale-[1.02] shadow-[0_0_30px_rgba(255,0,255,0.08)]'
                           : 'bg-[#0E1320]/60 hover:bg-[#151C2E] border-[#222B3D]/60'
-                      } border`}
+                        } border`}
                     >
                       {activeProviderURL === p.url && (
                         <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-fuchsia-400 to-transparent" />
                       )}
                       <div className="flex items-center justify-between mb-3">
                         <div className="font-semibold text-sm text-[#F8FAFC]">{p.name}</div>
-                        <div className={`w-3 h-3 rounded-full shrink-0 ${
-                          p.status === 'online'
+                        <div className={`w-3 h-3 rounded-full shrink-0 ${p.status === 'online'
                             ? 'bg-[#00FFA3] shadow-[0_0_16px_rgba(0,255,163,0.5)] animate-pulse'
                             : 'bg-red-500/40'
-                        }`} />
+                          }`} />
                       </div>
                       <div className="text-[11px] text-[#7B8AA0] font-mono truncate">{p.url}</div>
                       <div className="mt-3 flex items-center gap-2">
-                        <span className={`text-[9px] font-bold uppercase tracking-wider ${
-                          p.status === 'online' ? 'text-[#00FFA3]' : 'text-red-400'
-                        }`}>
+                        <span className={`text-[9px] font-bold uppercase tracking-wider ${p.status === 'online' ? 'text-[#00FFA3]' : 'text-red-400'
+                          }`}>
                           {p.status}
                         </span>
                         {activeProviderURL === p.url && (
@@ -684,22 +772,20 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setProviderProtocol('http')}
-                        className={`flex-1 py-3 text-sm font-mono font-bold transition-colors ${
-                          providerProtocol === 'http'
+                        className={`flex-1 py-3 text-sm font-mono font-bold transition-colors ${providerProtocol === 'http'
                             ? 'bg-[#FF00FF] text-black'
                             : 'bg-[#05070D] text-[#7B8AA0] hover:text-[#F8FAFC]'
-                        }`}
+                          }`}
                       >
                         http
                       </button>
                       <button
                         type="button"
                         onClick={() => setProviderProtocol('https')}
-                        className={`flex-1 py-3 text-sm font-mono font-bold transition-colors ${
-                          providerProtocol === 'https'
+                        className={`flex-1 py-3 text-sm font-mono font-bold transition-colors ${providerProtocol === 'https'
                             ? 'bg-[#FF00FF] text-black'
                             : 'bg-[#05070D] text-[#7B8AA0] hover:text-[#F8FAFC]'
-                        }`}
+                          }`}
                       >
                         https
                       </button>
@@ -735,11 +821,10 @@ export default function App() {
                           key={preset.label}
                           type="button"
                           onClick={() => applyPreset(preset.label)}
-                          className={`flex-1 py-3 text-sm font-mono font-bold transition-colors ${
-                            providerPath === preset.path
+                          className={`flex-1 py-3 text-sm font-mono font-bold transition-colors ${providerPath === preset.path
                               ? 'bg-[#FF00FF] text-black'
                               : 'bg-[#05070D] text-[#7B8AA0] hover:text-[#F8FAFC]'
-                          }`}
+                            }`}
                         >
                           {preset.label}
                         </button>
@@ -771,6 +856,57 @@ export default function App() {
           </div>
         )}
 
+        {/* Benchmarks Tab */}
+        {activeTab === 'benchmarks' && <BenchmarkPanel />}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="max-w-3xl space-y-6">
+            {/* Alerts */}
+            {alerts.length > 0 && (
+              <section className="rounded-3xl bg-[#0E1320]/60 border border-[#FFD700]/30 p-6">
+                <h2 className="text-[10px] font-bold uppercase tracking-widest text-[#FFD700] mb-4 flex items-center gap-2">
+                  Activity Alerts ({alerts.length})
+                </h2>
+                <div className="space-y-2">
+                  {alerts.map((a: any, i: number) => (
+                    <div key={i} className="rounded-xl bg-[#05070D] border border-[#222B3D]/40 p-3 text-[10px] font-mono">
+                      <span className="text-red-400">⚠</span> {a.model} — {a.metric} {a.operator} {a.value} (actual: {a.actual.toFixed(1)})
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Thresholds */}
+            <section className="rounded-3xl bg-[#0E1320]/60 border border-[#222B3D]/60 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-[10px] font-bold uppercase tracking-widest text-[#7B8AA0] flex items-center gap-2">
+                  <Settings className="w-3.5 h-3.5 text-[#FF00FF]" /> Alert Thresholds
+                </h2>
+              </div>
+              {thresholds.length === 0 ? (
+                <p className="text-[10px] font-mono text-[#7B8AA0]/60 py-4">No thresholds configured</p>
+              ) : (
+                <div className="space-y-2 mb-4">
+                  {thresholds.map((t: any) => (
+                    <div key={t.id} className="flex items-center justify-between rounded-xl bg-[#05070D] border border-[#222B3D]/40 p-3">
+                      <div className="text-[10px] font-mono">
+                        <span className="text-[#F8FAFC]">{t.metric}</span>
+                        <span className="text-[#7B8AA0]"> {t.operator} </span>
+                        <span className="text-[#FF00FF]">{t.value}</span>
+                        {t.model && <span className="text-[#7B8AA0]"> ({t.model})</span>}
+                      </div>
+                      <button onClick={async () => { await fetch(`/api/thresholds/${t.id}`, { method: 'DELETE' }); const r = await fetch('/api/thresholds'); if (r.ok) setThresholds(await r.json()); }} className="text-red-400 hover:underline text-[10px] font-mono">×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <ThresholdForm onCreated={() => { fetch('/api/thresholds').then(r => { if (r.ok) r.json().then(setThresholds); }); }} />
+            </section>
+          </div>
+        )}
+
       </main>
 
       {/* Chat FAB */}
@@ -783,9 +919,8 @@ export default function App() {
 
       {/* Chat Overlay */}
       <div
-        className={`fixed bottom-28 right-8 w-[520px] h-[70vh] backdrop-blur-3xl bg-[#05070D]/70 rounded-[32px] border border-[#222B3D]/80 shadow-[0_30px_80px_rgba(0,0,0,0.5)] flex flex-col z-40 transform transition-all duration-400 origin-bottom-right overflow-hidden ${
-          isChatOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'
-        }`}
+        className={`fixed bottom-28 right-8 w-[520px] h-[70vh] backdrop-blur-3xl bg-[#05070D]/70 rounded-[32px] border border-[#222B3D]/80 shadow-[0_30px_80px_rgba(0,0,0,0.5)] flex flex-col z-40 transform transition-all duration-400 origin-bottom-right overflow-hidden ${isChatOpen ? 'scale-100 opacity-100' : 'scale-0 opacity-0 pointer-events-none'
+          }`}
       >
         <div className="px-6 py-4 border-b border-[#222B3D]/60 flex items-center justify-between bg-[#05070D]/80">
           <div className="flex items-center gap-3">

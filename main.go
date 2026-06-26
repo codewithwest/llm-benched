@@ -41,6 +41,9 @@ func main() {
 	defer database.Close()
 	log.Printf("Initialized SQLite database at %s", *dbPath)
 
+	// Mark any orphaned benchmark runs (from a previous server crash) as failed
+	database.ResolveOrphanedRuns()
+
 	// Ensure the default target is added to the database
 	if err := database.AddProvider("Default Engine", *targetURL); err != nil {
 		log.Printf("Note: default provider not added (%v)", err)
@@ -53,6 +56,8 @@ func main() {
 
 	// Initialize Dashboard API Handler
 	dashboardAPI := api.NewDashboardHandler(database, *targetURL)
+	benchmarkAPI := &api.BenchmarkHandler{DB: database}
+	featuresAPI := &api.FeaturesHandler{DB: database, Runner: benchmarkAPI}
 
 	// Initialize Transparent Telemetry Proxy
 	transparentProxy, err := proxy.NewTransparentProxy(*targetURL, database)
@@ -76,7 +81,30 @@ func main() {
 		}
 	})
 
-	// 2. Serve UI embedded static files
+	// 2. Prometheus /metrics endpoint
+	mux.Handle("GET /metrics", api.GlobalMetrics)
+
+	// 3. Benchmark API routes
+	mux.HandleFunc("POST /api/benchmark/run", benchmarkAPI.HandleRun)
+	mux.HandleFunc("GET /api/benchmark/runs/{id}", benchmarkAPI.HandleGetRun)
+	mux.HandleFunc("GET /api/benchmark/runs", benchmarkAPI.HandleListRuns)
+	mux.HandleFunc("DELETE /api/benchmark/runs/{id}", benchmarkAPI.HandleDeleteRun)
+
+	// 4. Feature API routes
+	mux.HandleFunc("GET /api/sessions", featuresAPI.HandleGetSessions)
+	mux.HandleFunc("POST /api/replay/{id}", featuresAPI.HandleReplay)
+	mux.HandleFunc("GET /api/schedules", featuresAPI.HandleListSchedules)
+	mux.HandleFunc("POST /api/schedules", featuresAPI.HandleCreateSchedule)
+	mux.HandleFunc("DELETE /api/schedules/{id}", featuresAPI.HandleDeleteSchedule)
+	mux.HandleFunc("GET /api/thresholds", featuresAPI.HandleListThresholds)
+	mux.HandleFunc("POST /api/thresholds", featuresAPI.HandleCreateThreshold)
+	mux.HandleFunc("DELETE /api/thresholds/{id}", featuresAPI.HandleDeleteThreshold)
+	mux.HandleFunc("GET /api/alerts/check", featuresAPI.HandleCheckAlerts)
+
+	// Start background scheduler for benchmark schedules
+	featuresAPI.StartScheduler()
+
+	// 5. Serve UI embedded static files
 	uiSubFS, err := fs.Sub(uiFS, "ui/dist")
 	if err != nil {
 		log.Fatalf("Failed to create sub filesystem: %v", err)
