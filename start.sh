@@ -12,7 +12,15 @@ build() {
 
   echo "==> Building backend..."
   go mod tidy
-  go build -buildvcs=false -o llm-benchmarker
+  if [[ "$(uname)" == "Darwin" ]]; then
+    echo "    -> macOS detected, building universal binary"
+    GOOS=darwin GOARCH=amd64 go build -buildvcs=false -o /tmp/llm-benchmarker-darwin-amd64
+    GOOS=darwin GOARCH=arm64 go build -buildvcs=false -o /tmp/llm-benchmarker-darwin-arm64
+    lipo -create /tmp/llm-benchmarker-darwin-amd64 /tmp/llm-benchmarker-darwin-arm64 -output llm-benchmarker
+    rm /tmp/llm-benchmarker-darwin-amd64 /tmp/llm-benchmarker-darwin-arm64
+  else
+    go build -buildvcs=false -o llm-benchmarker
+  fi
 }
 
 run() {
