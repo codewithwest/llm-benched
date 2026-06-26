@@ -1,7 +1,7 @@
 # LLM-Benchmarker
 
-[![CI](https://github.com/your-org/llm-benchmarker/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/llm-benchmarker/actions/workflows/ci.yml)
-[![Go](https://img.shields.io/github/go-mod/go-version/your-org/llm-benchmarker)](https://go.dev/)
+[![CI](https://github.com/codewithwest/llm-benchmarker/actions/workflows/ci.yml/badge.svg)](https://github.com/codewithwest/llm-benchmarker/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/github/go-mod/go-version/codewithwest/llm-benchmarker)](https://go.dev/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 A transparent HTTP proxy that intercepts LLM API calls (Ollama, llama.cpp, OpenAI-compatible), captures full request/response data, and displays real-time telemetry through a web dashboard.
@@ -16,7 +16,7 @@ A transparent HTTP proxy that intercepts LLM API calls (Ollama, llama.cpp, OpenA
 
 ### Pre-built binaries
 
-Download from [GitHub Releases](https://github.com/your-org/llm-benchmarker/releases):
+Download from [GitHub Releases](https://github.com/codewithwest/llm-benchmarker/releases):
 
 | Platform | File |
 |----------|------|
@@ -29,7 +29,7 @@ Download from [GitHub Releases](https://github.com/your-org/llm-benchmarker/rele
 ### Build from source
 
 ```bash
-git clone https://github.com/your-org/llm-benchmarker.git
+git clone https://github.com/codewithwest/llm-benchmarker.git
 cd llm-benchmarker
 
 # Build everything in one step:
